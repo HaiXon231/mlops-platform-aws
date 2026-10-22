@@ -144,9 +144,15 @@ def main() -> None:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--mlflow-uri", required=True)
     parser.add_argument("--inference-uri", required=True)
+    parser.add_argument("--wait-only", action="store_true",
+                        help="Wait for Argo and the new Pod before opening an inference port-forward")
     args = parser.parse_args()
     expected = json.loads(args.expected.read_text(encoding="utf-8"))
     wait_for_release(expected, args.commit)
+    if args.wait_only:
+        print(json.dumps({"gitops_commit": args.commit, "image": expected["image"],
+                          "deployment": "ready"}, sort_keys=True))
+        return
     duration = verify_api(expected, args.inference_uri)
     client = MlflowClient(tracking_uri=args.mlflow_uri)
     verify_registry(client, expected)

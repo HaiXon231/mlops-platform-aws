@@ -89,6 +89,8 @@ fi
   echo "Serving image: $image"
 } >> "$GITHUB_STEP_SUMMARY"
 
+uv run --locked python scripts/m32_verify.py --expected "$expected" --commit "$commit" \
+  --mlflow-uri "$MLFLOW_TRACKING_URI" --inference-uri http://127.0.0.1:18000 --wait-only
 kubectl -n mlops port-forward --address 127.0.0.1 service/inference-api 18000:8000 >"$RUNNER_TEMP/m32-inference-tunnel.log" 2>&1 &
 inference_pid=$!
 wait_tunnel "$inference_pid" http://127.0.0.1:18000/healthz "$RUNNER_TEMP/m32-inference-tunnel.log"
