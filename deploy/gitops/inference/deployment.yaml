@@ -5,7 +5,7 @@ metadata:
   namespace: mlops
   labels:
     app: inference-api
-    mlops.aws/model-version: "1"
+    mlops.aws/model-version: '1'
 spec:
   replicas: 1
   revisionHistoryLimit: 2
@@ -21,61 +21,63 @@ spec:
     metadata:
       labels:
         app: inference-api
-        mlops.aws/model-version: "1"
+        mlops.aws/model-version: '1'
       annotations:
-        prometheus.io/scrape: "true"
+        prometheus.io/scrape: 'true'
         prometheus.io/path: /metrics
-        prometheus.io/port: "8000"
+        prometheus.io/port: '8000'
+        mlops.aws/release-id: m32-39808458556
     spec:
       terminationGracePeriodSeconds: 35
       nodeSelector:
         mlops.aws/workload: inference
         karpenter.sh/capacity-type: on-demand
       tolerations:
-        - key: mlops.aws/workload
-          operator: Equal
-          value: inference
-          effect: NoSchedule
+      - key: mlops.aws/workload
+        operator: Equal
+        value: inference
+        effect: NoSchedule
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
       containers:
-        - name: inference-api
-          image: 160616607747.dkr.ecr.ap-southeast-1.amazonaws.com/mlops-aws-inference-dev@sha256:d420db16509b7f096f3a46592f2179706af464840d32f085413ad41ffef80fb1
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: http
-              containerPort: 8000
-          startupProbe:
-            httpGet:
-              path: /readyz
-              port: http
-            periodSeconds: 5
-            failureThreshold: 24
-          readinessProbe:
-            httpGet:
-              path: /readyz
-              port: http
-            periodSeconds: 10
-            failureThreshold: 2
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            periodSeconds: 20
-            failureThreshold: 3
-          resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-              ephemeral-storage: 512Mi
-            limits:
-              cpu: "1"
-              memory: 1Gi
-              ephemeral-storage: 2Gi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
+      - name: inference-api
+        image: 160616607747.dkr.ecr.ap-southeast-1.amazonaws.com/mlops-aws-inference-dev@sha256:0d4686281d53343bb12651dbde4e8aafacad9d6aa646ec71b9e845670e55c6b7
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8000
+        startupProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 5
+          failureThreshold: 24
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 10
+          failureThreshold: 2
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 20
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+            ephemeral-storage: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+            ephemeral-storage: 2Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
