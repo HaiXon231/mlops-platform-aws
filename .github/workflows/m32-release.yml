@@ -10,13 +10,9 @@ on:
         description: Explicit approved Registry version
         required: true
         default: '1'
-      release_id:
-        description: Existing release ID to resume after a protected-branch PR merge; leave empty for a new release
-        required: false
 permissions:
   contents: write
   id-token: write
-  pull-requests: write
 concurrency:
   group: m32-release-main
   cancel-in-progress: false
@@ -24,14 +20,11 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       AWS_REGION: ap-southeast-1
-      REPO_NAME: mlops-aws-inference-dev
-      BUCKET: mlops-aws-model-artifacts-dev-160616607747-ap-southeast-1
       MODEL_NAME: ${{ inputs.model_name }}
       MODEL_VERSION: ${{ inputs.model_version }}
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -41,8 +34,7 @@ jobs:
         with:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@4959332f0f014c5280e7eac8b70c90cb574c9f9b # v6.6.0
-      - name: Check immutable repository identity and inputs
-        id: identity
+      - name: Check immutable repository identity and explicit version
         shell: bash
         run: |
           set -euo pipefail
@@ -51,193 +43,19 @@ jobs:
           test "$GITHUB_REPOSITORY_OWNER_ID" = 204581707
           [[ "$MODEL_NAME" =~ ^[a-z][a-z0-9-]{1,62}$ ]]
           [[ "$MODEL_VERSION" =~ ^[1-9][0-9]*$ ]]
-          if [[ -n "$REQUESTED_RELEASE_ID" ]]; then
-            release_id="$REQUESTED_RELEASE_ID"
-            [[ "$release_id" =~ ^m32-[0-9]+$ ]]
-            export RELEASE_ID="$release_id"
-            uv run --locked python - <<'PY'
-          import os, yaml
-          with open('deploy/gitops/export/job.yaml') as stream:
-              job = yaml.safe_load(stream)
-          args = job['spec']['template']['spec']['containers'][0]['args']
-          values = dict(zip(args[1::2], args[2::2]))
-          assert job['metadata']['annotations']['mlops.aws/release-id'] == os.environ['RELEASE_ID']
-          assert values['--model-name'] == os.environ['MODEL_NAME']
-          assert values['--model-version'] == os.environ['MODEL_VERSION']
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
-              print('release_id=' + os.environ['RELEASE_ID'], file=out)
-              print('serving_sha=' + values['--serving-git-sha'], file=out)
-              print('control_image=' + job['spec']['template']['spec']['containers'][0]['image'], file=out)
-          PY
-            git diff --exit-code "$(sed -n 's/^serving_sha=//p' "$GITHUB_OUTPUT")" HEAD -- src pyproject.toml uv.lock deploy/inference/Dockerfile deploy/release/Dockerfile
-          else
-            echo "release_id=m32-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "serving_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          REQUESTED_RELEASE_ID: ${{ inputs.release_id }}
+          test "$(git branch --show-current)" = main
       - run: uv sync --locked
-      - run: make m31-test
-      - name: Assume scoped AWS release role
+      - name: Test source, bundle validation and serving manifest
+        run: make m32-test
+      - name: Assume scoped AWS release role through GitHub OIDC
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: arn:aws:iam::160616607747:role/mlops-aws-dev-github-release
           aws-region: ap-southeast-1
-      - name: Build and publish control image for in-cluster Jobs
-        if: inputs.release_id == ''
-        id: control
-        shell: bash
-        run: |
-          set -euo pipefail
-          account=$(aws sts get-caller-identity --query Account --output text)
-          test "$account" = 160616607747
-          repo="$account.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME"
-          tag="m32-control-${SERVING_SHA:0:12}"
-          if ! digest=$(aws ecr describe-images --repository-name "$REPO_NAME" --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null); then
-            docker build -f deploy/release/Dockerfile -t "$repo:$tag" .
-            docker run --rm "$repo:$tag" python -m inference.release_s3 --help >/dev/null
-            aws ecr get-login-password | docker login --username AWS --password-stdin "${repo%/*}"
-            docker push "$repo:$tag"
-            digest=$(aws ecr describe-images --repository-name "$REPO_NAME" --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text)
-          fi
-          echo "image=$repo@$digest" >> "$GITHUB_OUTPUT"
-        env:
-          SERVING_SHA: ${{ steps.identity.outputs.serving_sha }}
-      - name: Commit export request for Argo CD
-        if: inputs.release_id == ''
-        id: stage
-        shell: bash
-        run: |
-          set -euo pipefail
-          uv run --locked python scripts/m32_gitops.py stage \
-            --model-name "$MODEL_NAME" --model-version "$MODEL_VERSION" \
-            --release-id "$RELEASE_ID" --serving-git-sha "$SERVING_SHA" \
-            --control-image "$CONTROL_IMAGE" --bucket "$BUCKET"
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add deploy/gitops/export/job.yaml deploy/gitops/export/kustomization.yaml
-          git commit -m "m32: request export $RELEASE_ID"
-          if git push origin HEAD:main; then
-            echo 'pending=false' >> "$GITHUB_OUTPUT"
-          else
-            branch="m32/export-$RELEASE_ID"
-            git push origin "HEAD:refs/heads/$branch"
-            gh pr create --base main --head "$branch" --title "m32: request export $RELEASE_ID" \
-              --body "Approved model export request. Merge, then dispatch M3.2 release with model name/version and release_id=$RELEASE_ID."
-            echo 'pending=true' >> "$GITHUB_OUTPUT"
-            echo "Export request awaits PR merge. Resume with release_id=$RELEASE_ID" >> "$GITHUB_STEP_SUMMARY"
-          fi
-        env:
-          RELEASE_ID: ${{ steps.identity.outputs.release_id }}
-          SERVING_SHA: ${{ steps.identity.outputs.serving_sha }}
-          CONTROL_IMAGE: ${{ steps.control.outputs.image }}
-      - name: Await complete release bundle from in-cluster Export Job
-        if: steps.stage.outputs.pending != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          prefix="releases/m32/$MODEL_NAME/v$MODEL_VERSION/$RELEASE_ID"
-          for attempt in $(seq 1 90); do
-            if aws s3api head-object --bucket "$BUCKET" --key "$prefix/complete.json" >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 20
-          done
-          echo "Export incomplete: s3://$BUCKET/$prefix/complete.json" >&2
-          exit 1
-        env:
-          RELEASE_ID: ${{ steps.identity.outputs.release_id }}
-      - name: Download and validate approved bundle
-        if: steps.stage.outputs.pending != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/releases
-          uv run --locked python -m inference.release_s3 download \
-            --bucket "$BUCKET" --model-name "$MODEL_NAME" --model-version "$MODEL_VERSION" \
-            --release-id "$RELEASE_ID" --serving-git-sha "$SERVING_SHA" \
-            --output "artifacts/releases/$MODEL_NAME-v$MODEL_VERSION" > artifacts/m32-completion.json
-          make m31-test
-        env:
-          RELEASE_ID: ${{ steps.identity.outputs.release_id }}
-          SERVING_SHA: ${{ steps.identity.outputs.serving_sha }}
-      - name: Build and push immutable serving image
-        if: steps.stage.outputs.pending != 'true'
-        id: image
-        shell: bash
-        run: |
-          set -euo pipefail
-          repo="160616607747.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO_NAME"
-          checksum=$(python -c 'import json; print(json.load(open("artifacts/m32-completion.json"))["artifact_checksum"][:16])')
-          tag="m32-v${MODEL_VERSION}-${checksum}-${SERVING_SHA:0:12}-${RELEASE_ID}"
-          docker build -f deploy/inference/Dockerfile \
-            --build-arg "RELEASE_DIR=artifacts/releases/$MODEL_NAME-v$MODEL_VERSION" \
-            --build-arg "SERVING_GIT_SHA=$SERVING_SHA" -t "$repo:$tag" .
-          docker run --rm --network none "$repo:$tag" python -c 'from inference.bundle import validate_release; from pathlib import Path; validate_release(Path("/app/release"))'
-          if ! digest=$(aws ecr describe-images --repository-name "$REPO_NAME" --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null); then
-            aws ecr get-login-password | docker login --username AWS --password-stdin "${repo%/*}"
-            docker push "$repo:$tag"
-            digest=$(aws ecr describe-images --repository-name "$REPO_NAME" --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text)
-          fi
-          echo "image=$repo@$digest" >> "$GITHUB_OUTPUT"
-        env:
-          RELEASE_ID: ${{ steps.identity.outputs.release_id }}
-          SERVING_SHA: ${{ steps.identity.outputs.serving_sha }}
-      - name: Commit pinned digest and PostSync verification
-        if: steps.stage.outputs.pending != 'true'
-        id: gitops
-        shell: bash
-        run: |
-          set -euo pipefail
-          control_image='${{ steps.control.outputs.image }}'
-          if [[ -z "$control_image" ]]; then
-            control_image='${{ steps.identity.outputs.control_image }}'
-          fi
-          uv run --locked python scripts/m32_gitops.py finalize \
-            --completion artifacts/m32-completion.json \
-            --image "$SERVING_IMAGE" --control-image "$control_image" --bucket "$BUCKET"
-          uv run --locked python scripts/m31-validate-manifest.py
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add deploy/gitops/inference/deployment.yaml deploy/gitops/inference/kustomization.yaml deploy/gitops/inference/post-sync-verification.yaml
-          if git diff --cached --quiet; then
-            echo 'pending=false' >> "$GITHUB_OUTPUT"
-            echo "GitOps release already committed: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-          else
-            git commit -m "m32: release $RELEASE_ID by digest"
-            if git push origin HEAD:main; then
-            echo 'pending=false' >> "$GITHUB_OUTPUT"
-            echo "GitOps commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
-            else
-              branch="m32/release-$RELEASE_ID"
-              git push origin "HEAD:refs/heads/$branch"
-              gh pr create --base main --head "$branch" --title "m32: release $RELEASE_ID" \
-                --body "Pinned serving digest and PostSync verification. Merge to deploy."
-              echo 'pending=true' >> "$GITHUB_OUTPUT"
-              echo "Release awaits GitOps PR merge; release_id=$RELEASE_ID" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          fi
-        env:
-          RELEASE_ID: ${{ steps.identity.outputs.release_id }}
-          SERVING_IMAGE: ${{ steps.image.outputs.image }}
-      - name: Await Argo CD PostSync result
-        if: steps.stage.outputs.pending != 'true' && steps.gitops.outputs.pending != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          prefix="releases/m32/$MODEL_NAME/v$MODEL_VERSION/$RELEASE_ID"
-          for attempt in $(seq 1 90); do
-            if aws s3api head-object --bucket "$BUCKET" --key "$prefix/verified.json" >/dev/null 2>&1; then
-              aws s3 cp "s3://$BUCKET/$prefix/verified.json" - >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-            if aws s3api head-object --bucket "$BUCKET" --key "$prefix/failed.json" >/dev/null 2>&1; then
-              aws s3 cp "s3://$BUCKET/$prefix/failed.json" - >&2
-              exit 1
-            fi
-            sleep 20
-          done
-          echo 'No PostSync result; inspect Argo CD Application and Job logs' >&2
-          exit 1
-        env:
-          RELEASE_ID: ${{ steps.identity.outputs.release_id }}
+      - name: Add only this runner IPv4 to EKS public API CIDRs
+        run: python3 scripts/m32_eks_cidr.py open --state-file "$RUNNER_TEMP/m32-cidrs.json"
+      - name: Export, build, deploy, verify and promote one release
+        run: bash scripts/m32_release.sh
+      - name: Restore exact original EKS public API CIDRs
+        if: always()
+        run: python3 scripts/m32_eks_cidr.py close --state-file "$RUNNER_TEMP/m32-cidrs.json"

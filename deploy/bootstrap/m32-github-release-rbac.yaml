@@ -1,0 +1,59 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: m32-github-release
+  namespace: mlops
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [inference-api]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames: [mlflow, inference-api]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/portforward]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: m32-github-release
+  namespace: mlops
+subjects:
+  - kind: Group
+    name: mlops-github-release
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: m32-github-release
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: m32-github-release
+  namespace: argocd
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    resourceNames: [inference-api]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: m32-github-release
+  namespace: argocd
+subjects:
+  - kind: Group
+    name: mlops-github-release
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: m32-github-release
+  apiGroup: rbac.authorization.k8s.io

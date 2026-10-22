@@ -22,12 +22,9 @@ M31_RELEASE_DIR ?= artifacts/releases/$(M31_MODEL_NAME)-v$(M31_MODEL_VERSION)
 
 .PHONY: m31-model-export m31-test m31-image-build m31-image-push m31-deploy m31-verify m31-cleanup m31-port-forward
 
-.PHONY: m32-test m32-adoption-check m32-gitops-verify m32-promotion-verify m32-export-render
+.PHONY: m32-test m32-adoption-check m32-gitops-verify m32-promotion-verify m32-release
 
-M32_RELEASE_ID ?=
-M32_SERVING_GIT_SHA ?=
-M32_CONTROL_IMAGE ?=
-M32_BUCKET ?= mlops-aws-model-artifacts-dev-160616607747-ap-southeast-1
+M32_CLOUD_MLFLOW_URI ?= http://127.0.0.1:15000
 
 m32-test:
 	$(UV) run --locked pytest -q tests/unit tests/integration
@@ -37,15 +34,14 @@ m32-adoption-check:
 	$(UV) run --locked python scripts/m32_adoption.py
 
 m32-gitops-verify:
-	kubectl -n argocd get application/inference-api application/inference-release-export -o wide
+	kubectl -n argocd get application/inference-api -o wide
 	kubectl -n mlops get deployment/inference-api service/inference-api -o wide
 
 m32-promotion-verify:
-	$(UV) run --locked python scripts/m32_champion_info.py --tracking-uri "$(MLFLOW_TRACKING_URI)" --model-name "$(M31_MODEL_NAME)"
+	$(UV) run --locked python scripts/m32_champion_info.py --tracking-uri "$(M32_CLOUD_MLFLOW_URI)" --model-name "$(M31_MODEL_NAME)"
 
-m32-export-render:
-	@test -n "$(M32_RELEASE_ID)" && test -n "$(M32_SERVING_GIT_SHA)" && test -n "$(M32_CONTROL_IMAGE)" || (echo 'Set M32_RELEASE_ID, M32_SERVING_GIT_SHA and M32_CONTROL_IMAGE' >&2; exit 2)
-	$(UV) run --locked python scripts/m32_gitops.py stage --model-name "$(M31_MODEL_NAME)" --model-version "$(M31_MODEL_VERSION)" --release-id "$(M32_RELEASE_ID)" --serving-git-sha "$(M32_SERVING_GIT_SHA)" --control-image "$(M32_CONTROL_IMAGE)" --bucket "$(M32_BUCKET)"
+m32-release:
+	gh workflow run m32-release.yml --ref main -f model_name="$(M31_MODEL_NAME)" -f model_version="$(M31_MODEL_VERSION)"
 
 m31-model-export:
 	$(UV) run --locked python -m inference.export --tracking-uri "$(MLFLOW_TRACKING_URI)" --model-name "$(M31_MODEL_NAME)" --model-version "$(M31_MODEL_VERSION)" --output "$(M31_RELEASE_DIR)"

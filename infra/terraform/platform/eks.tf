@@ -38,6 +38,10 @@ module "eks" {
         }
       }
     }
+    github_release = {
+      principal_arn     = aws_iam_role.m32_github_release.arn
+      kubernetes_groups = ["mlops-github-release"]
+    }
   }
 
   addons = {

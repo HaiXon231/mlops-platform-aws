@@ -38,19 +38,24 @@ resource "aws_iam_role" "m32_github_release" {
 
 data "aws_iam_policy_document" "m32_github_release" {
   statement {
-    sid       = "ListReleasePrefix"
+    sid       = "ListMlflowArtifacts"
     actions   = ["s3:ListBucket"]
     resources = [local.m32_bucket_arn]
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["releases/m32/*"]
+      values   = ["mlflow/*"]
     }
   }
   statement {
-    sid       = "ReadReleaseBundleAndStatus"
+    sid       = "ReadMlflowArtifacts"
     actions   = ["s3:GetObject"]
-    resources = ["${local.m32_bucket_arn}/releases/m32/*"]
+    resources = ["${local.m32_bucket_arn}/mlflow/*"]
+  }
+  statement {
+    sid       = "ManageTemporaryEksApiCidr"
+    actions   = ["eks:DescribeCluster", "eks:UpdateClusterConfig", "eks:DescribeUpdate", "eks:ListUpdates"]
+    resources = [module.eks.cluster_arn]
   }
   statement {
     sid       = "GetEcrLogin"
