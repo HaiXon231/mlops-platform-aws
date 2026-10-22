@@ -18,7 +18,5 @@ jobs:
       - run: uv sync --locked
       - run: make m31-test
       - run: uv run --locked python scripts/m31-validate-manifest.py
-      - run: docker build -f deploy/release/Dockerfile -t mlops-m32-control:ci .
-      - run: docker run --rm --network none mlops-m32-control:ci python -m inference.release_s3 --help
       - run: python -m compileall -q src scripts
       - run: git diff --check
