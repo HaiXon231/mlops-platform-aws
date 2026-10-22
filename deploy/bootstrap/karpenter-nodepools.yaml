@@ -1,0 +1,75 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: training-spot
+spec:
+  template:
+    metadata:
+      labels:
+        mlops.aws/workload: training
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: mlops-aws-dev
+      taints:
+        - key: mlops.aws/workload
+          value: training
+          effect: NoSchedule
+      requirements:
+        - key: mlops.aws/workload
+          operator: In
+          values: [training]
+        - key: kubernetes.io/arch
+          operator: In
+          values: [amd64]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: [spot]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: [c5.large, c6i.large, m5.large, m6i.large]
+      expireAfter: 24h
+  limits:
+    cpu: "4"
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 1m
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: inference-on-demand
+spec:
+  template:
+    metadata:
+      labels:
+        mlops.aws/workload: inference
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: mlops-aws-dev
+      taints:
+        - key: mlops.aws/workload
+          value: inference
+          effect: NoSchedule
+      requirements:
+        - key: mlops.aws/workload
+          operator: In
+          values: [inference]
+        - key: kubernetes.io/arch
+          operator: In
+          values: [amd64]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: [on-demand]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: [t3.large, m5.large, m6i.large]
+      expireAfter: 24h
+  limits:
+    cpu: "4"
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 1m

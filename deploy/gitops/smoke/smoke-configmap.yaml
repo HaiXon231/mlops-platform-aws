@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-gitops-smoke
+  namespace: default
+data:
+  result: synced-from-git

@@ -1,0 +1,28 @@
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: mlops-aws-dev
+spec:
+  instanceProfile: Karpenter-mlops-aws-dev
+  amiSelectorTerms:
+    - alias: al2023@latest
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: mlops-aws-dev
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: mlops-aws-dev
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 30Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
+  metadataOptions:
+    httpTokens: required
+    httpPutResponseHopLimit: 2
+  tags:
+    Project: mlops-platform-aws
+    Environment: dev
+    ManagedBy: Karpenter

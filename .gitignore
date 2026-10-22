@@ -1,0 +1,40 @@
+# Terraform state, caches and plans
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/*.tfplan.*
+**/tfplan
+**/*.plan
+**/terraform.tfstate.d/
+**/crash.log
+**/crash.*.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+
+# Local inputs, credentials and secrets
+**/*.tfvars
+**/*.tfvars.json
+.env
+.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/credentials
+**/secrets.*
+
+# Commit .terraform.lock.hcl for reproducible provider selections.
+
+# Local training data, models and Python environment
+/dataset/
+/artifacts/
+/backups/
+/mlruns/
+/.venv/
+/.pytest_cache/
+**/__pycache__/
+**/*.py[cod]

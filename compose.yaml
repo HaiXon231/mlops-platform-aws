@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_USER: ${MLFLOW_DB_USER:-mlflow}
+      POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:?Set MLFLOW_DB_PASSWORD in .env}
+      POSTGRES_DB: ${MLFLOW_DB_NAME:-mlflow}
+    volumes:
+      - mlflow_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: deploy/mlflow/Dockerfile
+    environment:
+      MLFLOW_DB_USER: ${MLFLOW_DB_USER:-mlflow}
+      MLFLOW_DB_PASSWORD: ${MLFLOW_DB_PASSWORD:?Set MLFLOW_DB_PASSWORD in .env}
+      MLFLOW_DB_NAME: ${MLFLOW_DB_NAME:-mlflow}
+      MLFLOW_DB_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - mlflow_artifacts:/mlartifacts
+    ports:
+      - "127.0.0.1:5000:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  mlflow_postgres:
+  mlflow_artifacts:

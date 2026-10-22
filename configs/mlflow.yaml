@@ -1,0 +1,3 @@
+experiment_name: nyc-taxi-trip-duration
+registered_model_name: nyc-taxi-trip-duration
+minimum_mae_improvement_fraction: 0.01

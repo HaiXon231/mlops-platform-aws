@@ -1,0 +1,26 @@
+seed: 42
+periods:
+  train: ["2025-01", "2025-02"]
+  validation: ["2025-03"]
+  test: ["2025-04"]
+data_dir: ../dataset
+output_dir: ../artifacts/training
+source_base_url: https://d37ci6vzurychx.cloudfront.net/trip-data
+sample_limit_per_month: 100000
+parquet_batch_size: 65536
+duration_min_minutes: 1
+duration_max_minutes: 180
+early_stopping_rounds: 30
+model:
+  objective: regression_l1
+  n_estimators: 500
+  learning_rate: 0.05
+  num_leaves: 31
+  max_depth: -1
+  min_child_samples: 30
+  subsample: 1.0
+  colsample_bytree: 1.0
+  n_jobs: 2
+  deterministic: true
+  force_col_wise: true
+  verbosity: -1

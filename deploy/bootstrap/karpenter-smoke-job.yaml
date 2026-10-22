@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: karpenter-training-smoke
+  namespace: default
+  labels:
+    app.kubernetes.io/part-of: mlops-platform-aws
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      nodeSelector:
+        mlops.aws/workload: training
+      tolerations:
+        - key: mlops.aws/workload
+          operator: Equal
+          value: training
+          effect: NoSchedule
+      containers:
+        - name: smoke
+          image: public.ecr.aws/docker/library/busybox:1.36.1
+          command: [sh, -c, "echo Karpenter training smoke test; sleep 45"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi

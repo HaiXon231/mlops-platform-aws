@@ -1,0 +1,10 @@
+.git
+.venv
+dataset
+artifacts/*
+!artifacts/releases/
+!artifacts/releases/**
+backups
+.env
+**/__pycache__
+**/.terraform
