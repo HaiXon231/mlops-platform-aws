@@ -12,9 +12,7 @@ The release bundle stays on the runner and inside the image. Previous `releases/
 
 The EKS cluster has public and private API endpoints enabled and uses Access Entries. Terraform extends the existing GitHub OIDC role with S3 `mlflow/*` read and EKS describe/update permissions restricted to `mlops-aws-dev`, then creates one STANDARD Access Entry in Kubernetes group `mlops-github-release`. The OIDC trust remains pinned to audience `sts.amazonaws.com`, immutable repository ID `1424395869`, owner ID `204581707` and branch `main`. No ClusterAdmin policy is attached. `deploy/bootstrap/m32-github-release-rbac.yaml` grants only the serving/MLflow service and Pod permissions in `mlops`, plus read-only access to the inference Application in `argocd`.
 
-Before applying Terraform, obtain the **current** EKS public CIDR list and pass it to `TF_VAR_eks_public_access_cidrs`; an old local IP would otherwise create unrelated cluster drift. Review the plan and require only the intended release role policy update and one Access Entry addition. Then apply that plan and install the RBAC manifest. Keep the pre-existing admin CIDR. No public MLflow Ingress, ALB or broad public Kubernetes API access is needed.
-
-During migration, remove the old PostSync Job from the inference Kustomization **before** dispatching the direct release. Retain the old exporter Application until the direct release succeeds. The serving Deployment and Service names, probes, scheduling and currently pinned digest do not change in this setup step.
+The access entry and namespace RBAC are installed. For Terraform plans, pass the **current baseline** EKS public CIDR list to `TF_VAR_eks_public_access_cidrs`; a stale local IP can otherwise appear as unrelated cluster drift. Keep the pre-existing admin CIDR. No public MLflow Ingress, ALB or broad public Kubernetes API access is needed.
 
 ## Run and verify a release
 
@@ -41,9 +39,5 @@ If branch protection rejects the single non-force commit, the workflow fails wit
 For manual recovery, read the **original list from that run's summary**, inspect the live cluster configuration, and restore precisely those original CIDRs using `aws eks update-cluster-config --name mlops-aws-dev --resources-vpc-config` with `endpointPublicAccess=true`, `endpointPrivateAccess=true`, and that exact `publicAccessCidrs` list. Wait for `aws eks describe-update` to report `Successful`, then confirm `aws eks describe-cluster` matches. Never substitute `0.0.0.0/0`, omit the administrator CIDR, or disable private access. The cleanup script refuses to overwrite a different concurrent administrator change and prints the baseline for manual reconciliation. Release workflow concurrency prevents two release runs from changing CIDRs or `champion` simultaneously.
 
 After each release, plan Terraform with the original admin CIDR variable and require no unplanned EKS network change. The successful workflow also reports the restored CIDR list.
-
-## Legacy removal after a successful direct release
-
-Delete only Application `inference-release-export`, its named Job and ServiceAccount, the old verifier Job, ServiceAccount, Role, RoleBinding and Lease, then remove their repository manifests and M3.2-only S3 handshake/control-image code. Remove only the old export/verify Pod Identity associations, IAM roles and inline policies through a reviewed Terraform plan. Keep `inference-api`, MLflow, PostgreSQL, PVCs, S3 history, ECR images and approved Registry versions. Because automated sync has `prune: false`, stale verifier RBAC must be removed explicitly after its manifest is removed. The repo retains M2 and M3.1 commands for their original workflows.
 
 M3.2 still excludes HPA/Prometheus/Grafana, ALB, canary traffic and automated metric rollback.

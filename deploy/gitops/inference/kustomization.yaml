@@ -4,4 +4,3 @@ namespace: mlops
 resources:
 - deployment.yaml
 - service.yaml
-- release-rbac.yaml

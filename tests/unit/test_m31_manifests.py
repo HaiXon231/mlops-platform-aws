@@ -29,7 +29,7 @@ def test_inference_deployment_is_private_digest_pinned_and_scheduled():
     assert container["resources"]["requests"]["cpu"] and container["resources"]["limits"]["memory"]
     assert service["spec"]["type"] == "ClusterIP"
     assert service["spec"]["ports"][0]["port"] == 8000
-    assert {"deployment.yaml", "kustomization.yaml", "service.yaml", "release-rbac.yaml"}.issubset(
+    assert {"deployment.yaml", "kustomization.yaml", "service.yaml"}.issubset(
         {path.name for path in DEPLOY.iterdir()})
 
 
