@@ -26,10 +26,10 @@ spec:
         prometheus.io/scrape: 'true'
         prometheus.io/path: /metrics
         prometheus.io/port: '8000'
-        mlops.aws/release-id: m32-39825064100-1
+        mlops.aws/release-id: m32-39826450397-1
         mlops.aws/artifact-checksum: d35626fd5e47c1e874be1cb4bb1d04278a33c07a34109cc6df2eccf6a0dcf6b3
         mlops.aws/mlflow-run-id: bb3155725d1149a8bfeefd1a9f184dbf
-        mlops.aws/serving-git-sha: e2a32ec6794962ade578d4185c706d31fba153d9
+        mlops.aws/serving-git-sha: bf8decb219c70c075b09210ad72eb427fb6a7d19
     spec:
       terminationGracePeriodSeconds: 35
       nodeSelector:
@@ -46,7 +46,7 @@ spec:
         runAsGroup: 10001
       containers:
       - name: inference-api
-        image: 160616607747.dkr.ecr.ap-southeast-1.amazonaws.com/mlops-aws-inference-dev@sha256:04be9767bd397ed88ad6ec286f16cc9c742196b359b16299985d8dd715566ab7
+        image: 160616607747.dkr.ecr.ap-southeast-1.amazonaws.com/mlops-aws-inference-dev@sha256:b2a90711ccbd1dd0e3f53b418dc2a39e4963368931da26e50b19e4e52b3536c8
         imagePullPolicy: IfNotPresent
         ports:
         - name: http
