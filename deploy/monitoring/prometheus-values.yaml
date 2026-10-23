@@ -1,0 +1,84 @@
+# prometheus-community/prometheus 29.37.1. One ephemeral server and only inference Pod scraping.
+rbac:
+  create: false
+serviceAccounts:
+  server:
+    create: false
+    name: m33-prometheus
+configmapReload:
+  prometheus:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+alertmanager:
+  enabled: false
+kube-state-metrics:
+  enabled: false
+prometheus-node-exporter:
+  enabled: false
+prometheus-pushgateway:
+  enabled: false
+server:
+  namespaces:
+    - mlops
+  replicaCount: 1
+  persistentVolume:
+    enabled: false
+  emptyDir:
+    sizeLimit: 1Gi
+  retention: 24h
+  service:
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+      ephemeral-storage: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+      ephemeral-storage: 1Gi
+  nodeSelector:
+    eks.amazonaws.com/nodegroup: system
+scrapeConfigs:
+  prometheus: {enabled: false}
+  kubernetes-api-servers: {enabled: false}
+  kubernetes-nodes: {enabled: false}
+  kubernetes-nodes-cadvisor: {enabled: false}
+  kubernetes-service-endpoints: {enabled: false}
+  kubernetes-service-endpoints-slow: {enabled: false}
+  prometheus-pushgateway: {enabled: false}
+  kubernetes-services: {enabled: false}
+  kubernetes-pods: {enabled: false}
+  kubernetes-pods-slow: {enabled: false}
+serverFiles:
+  prometheus.yml:
+    scrape_configs:
+      - job_name: inference-api
+        scrape_interval: 15s
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names: [mlops]
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            regex: inference-api
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            regex: inference-api
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_container_port_name]
+            regex: http
+            action: keep
+          - source_labels: [__meta_kubernetes_pod_phase]
+            regex: Running
+            action: keep
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod

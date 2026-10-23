@@ -43,6 +43,32 @@ m32-promotion-verify:
 m32-release:
 	gh workflow run m32-release.yml --ref main -f model_name="$(M31_MODEL_NAME)" -f model_version="$(M31_MODEL_VERSION)"
 
+.PHONY: m33-test m33-deploy m33-verify m33-load-test m33-cleanup
+M33_VUS ?= 10
+M33_RATE ?= 20
+M33_DURATION_SECONDS ?= 300
+
+m33-test:
+	$(UV) run --locked pytest -q tests/unit/test_m33_config.py
+	$(UV) run --locked python scripts/m31-validate-manifest.py
+	python3 -m json.tool deploy/monitoring/inference-dashboard.json >/dev/null
+	bash -n scripts/m33.sh
+	kubectl kustomize deploy/gitops/inference >/dev/null
+	helm template m33-prometheus prometheus-community/prometheus --version 29.37.1 --namespace monitoring -f deploy/monitoring/prometheus-values.yaml >/dev/null
+	helm template m33-grafana grafana-community/grafana --version 14.0.1 --namespace monitoring -f deploy/monitoring/grafana-values.yaml >/dev/null
+
+m33-deploy:
+	bash scripts/m33.sh deploy
+
+m33-verify:
+	bash scripts/m33.sh verify
+
+m33-load-test:
+	M33_VUS="$(M33_VUS)" M33_RATE="$(M33_RATE)" M33_DURATION_SECONDS="$(M33_DURATION_SECONDS)" bash scripts/m33.sh load-test
+
+m33-cleanup:
+	bash scripts/m33.sh cleanup
+
 m31-model-export:
 	$(UV) run --locked python -m inference.export --tracking-uri "$(MLFLOW_TRACKING_URI)" --model-name "$(M31_MODEL_NAME)" --model-version "$(M31_MODEL_VERSION)" --output "$(M31_RELEASE_DIR)"
 

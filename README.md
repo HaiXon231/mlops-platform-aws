@@ -1,5 +1,9 @@
 # MLOps Platform on AWS
 
+## Phase 3 — M3.3: HPA, Prometheus và Grafana (chuẩn bị, chưa deploy)
+
+M3.3 thêm HPA CPU 60% cho `inference-api` (1–3 Pods) và EKS Metrics Server add-on qua Terraform. Argo CD tiếp tục quản lý Deployment, Service, HPA nhưng bỏ qua `spec.replicas` do HPA điều khiển. Prometheus và Grafana dùng hai Helm releases riêng trong namespace `monitoring`, chỉ có ClusterIP; Prometheus scrape `/metrics` từng inference Pod và giữ dữ liệu 24 giờ trên `emptyDir`. Grafana lấy mật khẩu từ Kubernetes Secret tạo lúc deploy và có dashboard request rate, P95 latency, error rate, Pod scrape status. k6 Job trong cluster tạo tải thật cho `/predict`. Serving image, GitHub release workflow, MLflow và champion không thay đổi. Xem [runbook M3.3](docs/m33-runbook.md) để review plan, triển khai sau khi được duyệt, xác minh scale-out/scale-in và cleanup đúng phạm vi.
+
 ## Phase 3 — M3.2: GitHub Actions và Argo CD GitOps
 
 M3.2 phát hành một Registry model name/version cụ thể qua GitHub Actions: runner dùng OIDC, tạm cho phép IPv4 `/32` của mình vào EKS API, port-forward tới cloud MLflow, xác nhận approval và export bundle trực tiếp. Workflow build/push một serving image, commit một digest vào GitOps, đợi Argo CD sync, kiểm tra API và chỉ sau đó xác nhận alias `champion`. CIDR ban đầu được khôi phục bằng bước cleanup luôn chạy. [Runbook M3.2](docs/m32-runbook.md) ghi rõ quyền truy cập, release và phục hồi khi workflow bị gián đoạn.
@@ -43,7 +47,7 @@ Input phải có đúng ba trường; location IDs là số nguyên 1–263, tim
 
 ### Kế hoạch EKS sau review
 
-`deploy/gitops/inference/` là Kustomize path cho Argo CD. Deployment/Service `inference-api` trong namespace `mlops` dùng một replica, RollingUpdate, ClusterIP port 8000, probes và node selector/toleration khớp NodePool `inference-on-demand`. GitHub Actions cập nhật image theo digest; không dùng `m31-deploy` cho workload do Argo CD quản lý. Chưa có Ingress, HPA, Prometheus Server hoặc Grafana. `m31-deploy` vẫn phục vụ checkpoint M3.1 độc lập và từ chối digest placeholder toàn số 0.
+`deploy/gitops/inference/` là Kustomize path cho Argo CD. Deployment/Service `inference-api` trong namespace `mlops` dùng một replica ban đầu, RollingUpdate, ClusterIP port 8000, probes và node selector/toleration khớp NodePool `inference-on-demand`. GitHub Actions cập nhật image theo digest; không dùng `m31-deploy` cho workload do Argo CD quản lý. M3.3 bổ sung HPA và monitoring riêng, không có public Ingress. `m31-deploy` vẫn phục vụ checkpoint M3.1 độc lập và từ chối digest placeholder toàn số 0.
 
 Sau khi review và cho phép triển khai, người vận hành có thể chạy `make m31-image-push` để push tag immutable vào ECR inference repository hiện có. Nếu source đã đổi sau lúc build, đặt `M31_IMAGE_TAG=<tag đã build và kiểm thử>` trước lệnh push; script xác nhận tag vẫn khớp checksum bundle. Lệnh in ra `repository@sha256:<digest>`; thay image trong `deploy/gitops/inference/deployment.yaml` bằng giá trị đó và kiểm tra label model version 1. Kiểm tra `kubectl get nodepool inference-on-demand` truy cập được EKS; nếu timeout, kiểm tra kết nối tới endpoint public/private và đối chiếu IP public với `publicAccessCidrs`. Chạy `python3 scripts/m31-validate-manifest.py`, rồi mới chạy `make m31-deploy`. `make m31-verify` kiểm tra rollout và resources. `make m31-port-forward` mở Service tại `http://127.0.0.1:8000` để thử `/readyz`, `/predict`, `/metrics`. `make m31-cleanup` chỉ xóa Deployment và Service `inference-api`; PostgreSQL, MLflow, PVC và workload Phase 2 không bị đụng tới.
 

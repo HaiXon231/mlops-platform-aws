@@ -40,7 +40,9 @@ def check() -> None:
     actual_service = _live("service", "inference-api")
     expected_spec = deployment["spec"]
     live_spec = actual_deployment["spec"]
-    for field in ("replicas", "revisionHistoryLimit", "strategy", "selector"):
+    # HPA owns live replicas after M3.3; the GitOps template still pins one as
+    # its initial value for adoption and recovery.
+    for field in ("revisionHistoryLimit", "strategy", "selector"):
         _subset(expected_spec[field], live_spec.get(field), "deployment.spec." + field)
     desired_pod = expected_spec["template"]
     live_pod = live_spec["template"]
@@ -50,7 +52,8 @@ def check() -> None:
         _subset(desired_pod["spec"][field], live_pod["spec"].get(field), "pod.spec." + field)
     for field in ("type", "selector", "ports"):
         _subset(service["spec"][field], actual_service["spec"].get(field), "service.spec." + field)
-    if actual_deployment.get("status", {}).get("readyReplicas", 0) != expected_spec["replicas"]:
+    replicas = live_spec.get("replicas", 0)
+    if replicas < 1 or actual_deployment.get("status", {}).get("readyReplicas", 0) != replicas:
         raise ValueError("Serving deployment is not Ready")
     print("Live inference Deployment/Service match desired GitOps state and are Ready")
 

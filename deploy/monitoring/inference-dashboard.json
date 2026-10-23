@@ -1,0 +1,39 @@
+{
+  "uid": "m33-inference",
+  "title": "Inference API",
+  "tags": ["mlops", "m3.3"],
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "15s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "id": 1, "title": "Prediction request rate", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "sum(rate(inference_http_requests_total{job=\"inference-api\",path=\"/predict\"}[5m]))", "legendFormat": "requests/s"}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []}
+    },
+    {
+      "id": 2, "title": "Prediction P95 latency", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_http_request_duration_seconds_bucket{job=\"inference-api\",path=\"/predict\"}[5m])))", "legendFormat": "P95"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []}
+    },
+    {
+      "id": 3, "title": "Prediction error rate", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "100 * sum(rate(inference_http_errors_total{job=\"inference-api\",path=\"/predict\"}[5m])) / clamp_min(sum(rate(inference_http_requests_total{job=\"inference-api\",path=\"/predict\"}[5m])), 0.000001)", "legendFormat": "errors %"}],
+      "fieldConfig": {"defaults": {"unit": "percent"}, "overrides": []}
+    },
+    {
+      "id": 4, "title": "Inference Pod scrape status (1 = UP)", "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"refId": "A", "expr": "up{job=\"inference-api\"}", "legendFormat": "{{pod}}"}],
+      "fieldConfig": {"defaults": {"min": 0, "max": 1, "decimals": 0}, "overrides": []}
+    }
+  ]
+}

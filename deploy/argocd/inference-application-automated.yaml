@@ -12,9 +12,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: mlops
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: inference-api
+      namespace: mlops
+      jsonPointers:
+        - /spec/replicas
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
+      - RespectIgnoreDifferences=true

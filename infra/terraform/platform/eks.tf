@@ -95,3 +95,13 @@ module "eks" {
   }
 
 }
+
+# Metrics Server is absent from the existing cluster. Keep this add-on separate
+# from the EKS module so the plan contains only an additive resource.
+resource "aws_eks_addon" "metrics_server" {
+  cluster_name  = module.eks.cluster_name
+  addon_name    = "metrics-server"
+  addon_version = "v0.9.0-eksbuild.13" # EKS 1.36 default on 2026-10-23
+
+  depends_on = [module.eks]
+}
