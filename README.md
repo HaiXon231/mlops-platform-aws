@@ -1,8 +1,8 @@
 # MLOps Platform on AWS
 
-## Phase 3 — M3.3: HPA, Prometheus và Grafana (chuẩn bị, chưa deploy)
+## Phase 3 — M3.3: HPA, Prometheus và Grafana
 
-M3.3 thêm HPA CPU 60% cho `inference-api` (1–3 Pods) và EKS Metrics Server add-on qua Terraform. Argo CD tiếp tục quản lý Deployment, Service, HPA nhưng bỏ qua `spec.replicas` do HPA điều khiển. Prometheus và Grafana dùng hai Helm releases riêng trong namespace `monitoring`, chỉ có ClusterIP; Prometheus scrape `/metrics` từng inference Pod và giữ dữ liệu 24 giờ trên `emptyDir`. Grafana lấy mật khẩu từ Kubernetes Secret tạo lúc deploy và có dashboard request rate, P95 latency, error rate, Pod scrape status. k6 Job trong cluster tạo tải thật cho `/predict`. Serving image, GitHub release workflow, MLflow và champion không thay đổi. Xem [runbook M3.3](docs/m33-runbook.md) để review plan, triển khai sau khi được duyệt, xác minh scale-out/scale-in và cleanup đúng phạm vi.
+M3.3 thêm HPA CPU 60% cho `inference-api` (1–3 Pods) và EKS Metrics Server add-on qua Terraform. Argo CD tiếp tục quản lý Deployment, Service, HPA nhưng bỏ qua `spec.replicas` do HPA điều khiển. Prometheus và Grafana dùng hai Helm releases riêng trong namespace `monitoring`, chỉ có ClusterIP; Prometheus scrape `/metrics` từng inference Pod và giữ dữ liệu 24 giờ trên `emptyDir`. Grafana lấy mật khẩu từ Kubernetes Secret tạo lúc deploy và có dashboard request rate, P95 latency, error rate, Pod scrape status. k6 Job trong cluster tạo tải thật cho `/predict`. Serving image, GitHub release workflow, MLflow và champion không thay đổi. M3.3 đã chạy trên EKS ngày 2026-10-23; xem [runbook M3.3](docs/m33-runbook.md) và [bằng chứng triển khai](docs/evidence/m33-2026-10-23.md).
 
 ## Phase 3 — M3.2: GitHub Actions và Argo CD GitOps
 

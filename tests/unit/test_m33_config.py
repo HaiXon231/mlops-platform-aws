@@ -45,6 +45,8 @@ def test_monitoring_is_private_ephemeral_and_scrapes_inference_pods_only():
     assert len(jobs) == 1 and jobs[0]["job_name"] == "inference-api"
     assert jobs[0]["kubernetes_sd_configs"][0]["namespaces"]["names"] == ["mlops"]
     assert grafana["admin"]["existingSecret"] == "m33-grafana-admin"
+    assert grafana["deploymentStrategy"]["type"] == "Recreate"
+    assert grafana["dashboardProviders"]["dashboardproviders.yaml"]["providers"][0]["updateIntervalSeconds"] > 10
     assert grafana["datasources"]["datasources.yaml"]["datasources"][0]["url"].startswith(
         "http://m33-prometheus-server.monitoring.svc.cluster.local"
     )
@@ -56,7 +58,7 @@ def test_dashboard_matches_serving_metrics_contract():
     assert len(queries) == 4
     assert any("inference_http_requests_total" in query for query in queries)
     assert any("histogram_quantile" in query and "inference_http_request_duration_seconds_bucket" in query for query in queries)
-    assert any("inference_http_errors_total" in query for query in queries)
+    assert any("inference_http_errors_total" in query and "or vector(0)" in query for query in queries)
     assert any('up{job="inference-api"}' in query for query in queries)
 
 

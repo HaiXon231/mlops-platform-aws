@@ -52,7 +52,8 @@ verify() {
   replicas="$(kubectl -n mlops get deployment inference-api -o jsonpath='{.spec.replicas}')"
   for attempt in $(seq 1 24); do
     if curl -fsS --get --data-urlencode 'query=up{job="inference-api"}' \
-        http://127.0.0.1:19090/api/v1/query | python3 -c \
+        --max-time 3 \
+        http://127.0.0.1:19090/api/v1/query 2>/dev/null | python3 -c \
         'import json,sys; x=json.load(sys.stdin); r=x["data"]["result"]; assert x["status"]=="success" and len(r)==int(sys.argv[1]) and all(float(i["value"][1])==1 for i in r)' "$replicas" 2>/dev/null; then
       break
     fi

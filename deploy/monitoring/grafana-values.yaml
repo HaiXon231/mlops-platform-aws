@@ -7,6 +7,8 @@ testFramework:
   enabled: false
 service:
   type: ClusterIP
+deploymentStrategy:
+  type: Recreate
 persistence:
   enabled: false
 resources:
@@ -39,6 +41,7 @@ dashboardProviders:
         orgId: 1
         folder: MLOps
         type: file
+        updateIntervalSeconds: 30
         disableDeletion: true
         editable: false
         options:
