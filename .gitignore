@@ -38,3 +38,6 @@
 /.pytest_cache/
 **/__pycache__/
 **/*.py[cod]
+
+# Local development history and handoff notes; back up separately when moving machines.
+/docs/_local/

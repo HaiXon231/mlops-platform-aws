@@ -1,11 +1,56 @@
 TERRAFORM ?= terraform
 AWS_PROFILE ?= mlops-dev
+.DEFAULT_GOAL := help
 BOOTSTRAP_DIR := infra/terraform/bootstrap
 PERSISTENT_DIR := infra/terraform/persistent
 PLATFORM_DIR := infra/terraform/platform
 
 export AWS_PROFILE
 export TF_VAR_aws_profile := $(AWS_PROFILE)
+
+.PHONY: help check cloud-images-build cloud-images-push cloud-data-sync cloud-deploy \
+        cloud-train cloud-verify cloud-backup cloud-restore-check cloud-teardown \
+        serving-export serving-build serving-push serving-verify serving-port-forward \
+        serving-manifest-check release-test release-run release-gitops-verify \
+        release-promotion-verify monitoring-test monitoring-deploy monitoring-verify \
+        monitoring-load-test monitoring-cleanup
+
+help:
+	@printf '%s\n' \
+	  'MLOps on AWS — run make <target>; AWS_PROFILE defaults to mlops-dev.' \
+	  '' \
+	  'Infrastructure (Terraform plans are read-only; apply/down change billable AWS resources):' \
+	  '  tf-bootstrap-init|plan|apply       Local state bucket; apply creates persistent S3.' \
+	  '  tf-persistent-init|plan|apply|verify  S3/ECR; apply creates persistent billable storage.' \
+	  '  tf-platform-init|plan|apply|verify   VPC/EKS/IAM/add-ons; apply creates billable cluster.' \
+	  '  tf-platform-down                 Back up and remove workloads, then destroy platform only.' \
+	  '  k8s-bootstrap|verify|smoke       Helm Karpenter/Argo CD; smoke may start a paid EC2 node.' \
+	  '' \
+	  'Data and model (dataset download and training may use network/compute):' \
+	  '  training-setup|test, data-download, train-local' \
+	  '  mlflow-up|verify|train|import-run|validate|backup|restore-check|down  Local Compose.' \
+	  '  cloud-images-build|push, cloud-data-sync, cloud-deploy, cloud-train  EKS/Spot/S3/ECR.' \
+	  '  cloud-verify|backup|restore-check  Read-only check or S3 backup as named.' \
+	  '' \
+	  'Serving and release (GitOps owns the live inference Deployment):' \
+	  '  serving-export|build|verify      Local release bundle/image; requires approved Registry model.' \
+	  '  serving-push                    Push immutable image to ECR; does not deploy.' \
+	  '  serving-port-forward, serving-manifest-check  Inspect running service/manifest.' \
+	  '  release-test|run|gitops-verify|promotion-verify  run dispatches GitHub release workflow.' \
+	  '' \
+	  'Monitoring (deploy/cleanup change Kubernetes resources; load-test costs compute):' \
+	  '  monitoring-test|deploy|verify|load-test|cleanup' \
+	  '' \
+	  'Verification and cleanup:' \
+	  '  check                           All local Python unit/integration tests.' \
+	  '  cloud-teardown                  Back up, then delete mlops namespace incl. serving; stop GitOps first.' \
+	  '  k8s-cleanup                     Remove bootstrap resources after workloads are stopped.' \
+	  '' \
+	  'Older m23/m31/m32/m33 targets remain as compatibility entry points for CI/scripts.' \
+	  'Read docs/setup.md and docs/operations.md before applying or deleting AWS resources.'
+
+check:
+	$(UV) run --locked pytest -q
 
 .PHONY: tf-bootstrap-init tf-bootstrap-plan tf-bootstrap-apply \
         tf-persistent-init tf-persistent-plan tf-persistent-apply tf-persistent-verify \
@@ -261,3 +306,33 @@ k8s-cleanup:
 
 argocd-port-forward:
 	kubectl -n argocd port-forward service/argocd-server 8080:443
+
+# Purpose-based entry points. The established targets remain for CI and existing scripts.
+cloud-images-build: m23-images-build
+cloud-images-push: m23-images-push
+cloud-data-sync: m23-data-sync
+cloud-deploy: m23-deploy
+cloud-train: m23-train
+cloud-verify: m23-verify
+cloud-backup: m23-backup
+cloud-restore-check: m23-restore-check
+cloud-teardown: m23-teardown
+
+serving-export: m31-model-export
+serving-build: m31-image-build
+serving-push: m31-image-push
+serving-verify: m31-verify
+serving-port-forward: m31-port-forward
+serving-manifest-check:
+	$(UV) run --locked python scripts/m31-validate-manifest.py
+
+release-test: m32-test
+release-run: m32-release
+release-gitops-verify: m32-gitops-verify
+release-promotion-verify: m32-promotion-verify
+
+monitoring-test: m33-test
+monitoring-deploy: m33-deploy
+monitoring-verify: m33-verify
+monitoring-load-test: m33-load-test
+monitoring-cleanup: m33-cleanup
