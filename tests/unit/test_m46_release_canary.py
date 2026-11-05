@@ -51,6 +51,9 @@ def test_promoted_only_when_new_replicaset_is_stable_and_healthy():
 def test_aborted_when_the_new_replicaset_is_rejected():
     assert verify.rollout_state(deployment(), rollout(phase="Degraded", abort=True), EXPECTED) == "aborted"
     assert verify.rollout_state(deployment(), rollout(abort=True), EXPECTED) == "aborted"
+    # Seen on the cluster: a canary that never became Ready is rejected by ProgressDeadlineExceeded,
+    # which leaves status.abort unset and only sets phase=Degraded.
+    assert verify.rollout_state(deployment(), rollout(phase="Degraded"), EXPECTED) == "aborted"
     # A Degraded rollout whose current ReplicaSet is already stable is not a rejected canary.
     assert verify.rollout_state(deployment(), rollout(phase="Degraded", currentPodHash="old"), EXPECTED) == "progressing"
 
