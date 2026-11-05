@@ -25,7 +25,8 @@ split() {
   kubectl -n monitoring port-forward --address 127.0.0.1 service/m33-prometheus-server 19091:80 \
     >/tmp/m42-prometheus-port-forward.log 2>&1 &
   local pid=$!
-  trap 'kill "$pid" 2>/dev/null || true' EXIT
+  # Chuỗi trong dấu nháy kép: biến local không còn tồn tại khi trap EXIT chạy, nên phải mở rộng ngay.
+  trap "kill $pid 2>/dev/null || true" EXIT
   for _ in $(seq 1 20); do
     curl -fsS --max-time 2 http://127.0.0.1:19091/-/ready >/dev/null 2>&1 && break
     sleep 1

@@ -92,10 +92,10 @@ load_test() {
   kubectl -n mlops create configmap m33-k6-script --from-file=k6.js="$monitor/k6.js" \
     --dry-run=client -o yaml | kubectl apply -f -
   local job
-  job="$(K6_VUS="$vus" K6_RATE="$rate" K6_DURATION="${seconds}s" K6_BASE_URL="$base_url" python3 - "$monitor/k6-job.yaml.tpl" <<'PY' | kubectl create -f - -o name
+  job="$(LOAD_VUS="$vus" LOAD_RATE="$rate" LOAD_DURATION="${seconds}s" LOAD_BASE_URL="$base_url" python3 - "$monitor/k6-job.yaml.tpl" <<'PY' | kubectl create -f - -o name
 import os, pathlib, sys
 content = pathlib.Path(sys.argv[1]).read_text()
-for key in ("K6_VUS", "K6_RATE", "K6_DURATION", "K6_BASE_URL"):
+for key in ("LOAD_VUS", "LOAD_RATE", "LOAD_DURATION", "LOAD_BASE_URL"):
     content = content.replace("${" + key + "}", os.environ[key])
 print(content)
 PY

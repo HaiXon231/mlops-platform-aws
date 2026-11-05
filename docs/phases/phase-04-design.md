@@ -23,6 +23,7 @@ Không thay đổi validation gate của Phase 2. Canary là kiểm tra **vận 
 | Metrics | App xuất `inference_http_requests_total`, `inference_http_errors_total`, `inference_http_request_duration_seconds`, `inference_model_info` | Đủ cho error-rate và latency; không cần sửa app |
 | Prometheus | 1 server, ephemeral, chỉ scrape Pod label `app=inference-api`, **chưa giữ label hash của ReplicaSet** | Phải thêm relabel để tách canary/stable |
 | Mạng | Public subnet có `kubernetes.io/role/elb`, private có `internal-elb` | Tag subnet cho ALB đã sẵn |
+| Tải k6 (Phase 3) | `K6_VUS` và `K6_DURATION` là biến gốc của k6 và ghi đè toàn bộ `scenarios`, nên `constant-arrival-rate` bị bỏ qua (log: `"env" level configuration overrode scenarios configuration entirely`). Các bài tải Phase 3 thực chất là vòng lặp kín theo số VU, không phải tốc độ cố định | Đã đổi sang `LOAD_VUS/RATE/DURATION/BASE_URL`; từ nay `M33_RATE` có hiệu lực. Số liệu Phase 3 (ví dụ 55.398 request) không so sánh trực tiếp được với tải theo tốc độ cố định |
 | Node `system` | `t3.large`, desired 1, max 2, **CPU requests ~91%** | LB Controller + Argo Rollouts sẽ không vừa; cần tăng `desired_size` lên 2 |
 | IAM | Pod Identity (không IRSA) cho Karpenter/MLflow/training | LB Controller dùng cùng kiểu |
 | Argo CD | Application `automated`, `selfHeal=true`, `prune=false` | Phải cập nhật `ignoreDifferences` cho `Rollout` |

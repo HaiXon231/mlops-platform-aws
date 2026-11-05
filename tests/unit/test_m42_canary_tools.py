@@ -51,15 +51,15 @@ def test_load_test_can_target_alb_but_only_validated_hostnames():
     script = (ROOT / "scripts/m33.sh").read_text()
     assert 'M33_TARGET:-service' in script
     assert "elb\\.amazonaws\\.com" in script
-    assert "K6_BASE_URL" in script
+    assert "LOAD_BASE_URL" in script
     k6 = (ROOT / "deploy/monitoring/k6.js").read_text()
-    assert "__ENV.K6_BASE_URL" in k6 and "inference-api.mlops.svc.cluster.local:8000" in k6
+    assert "__ENV.LOAD_BASE_URL" in k6 and "inference-api.mlops.svc.cluster.local:8000" in k6
     template = (ROOT / "deploy/monitoring/k6-job.yaml.tpl").read_text()
-    for key, value in {"K6_VUS": "10", "K6_RATE": "20", "K6_DURATION": "300s",
-                       "K6_BASE_URL": "http://internal-x.ap-southeast-1.elb.amazonaws.com"}.items():
+    for key, value in {"LOAD_VUS": "10", "LOAD_RATE": "20", "LOAD_DURATION": "300s",
+                       "LOAD_BASE_URL": "http://internal-x.ap-southeast-1.elb.amazonaws.com"}.items():
         template = template.replace("${" + key + "}", value)
     env = {item["name"]: item["value"] for item in yaml.safe_load(template)["spec"]["template"]["spec"]["containers"][0]["env"]}
-    assert env["K6_BASE_URL"].startswith("http://internal-")
+    assert env["LOAD_BASE_URL"].startswith("http://internal-")
     assert not re.search(r"\$\{\w+\}", template), "every placeholder must be substituted"
 
 
@@ -81,3 +81,23 @@ def test_status_and_split_scripts_stay_read_only():
     for verb in ("apply", "delete", "patch", "create", "scale", "annotate", "label"):
         assert not re.search(rf"kubectl\b[^\n]*\b{verb}\b", script), verb
     assert "M42_WINDOW must look like" in script
+
+
+def test_split_cleans_up_its_port_forward_without_unbound_local_variable():
+    script = (ROOT / "scripts/m42.sh").read_text()
+    # `local pid` is out of scope when an EXIT trap runs under `set -u`; expand the PID when the trap is set.
+    assert "trap \"kill $pid 2>/dev/null || true\" EXIT" in script
+    assert "trap 'kill" not in script
+
+
+def test_load_env_names_never_collide_with_native_k6_options():
+    """K6_VUS and K6_DURATION override `scenarios` entirely, silently disabling the arrival rate."""
+    native = {"K6_VUS", "K6_DURATION", "K6_ITERATIONS", "K6_STAGES", "K6_MAX_VUS", "K6_SCENARIOS"}
+    template = (ROOT / "deploy/monitoring/k6-job.yaml.tpl").read_text()
+    script = (ROOT / "deploy/monitoring/k6.js").read_text()
+    runner = (ROOT / "scripts/m33.sh").read_text()
+    for text in (template, runner):
+        assert not (native & set(re.findall(r"\bK6_[A-Z_]+\b", text))), "native k6 env name in use"
+    for key in ("LOAD_VUS", "LOAD_RATE", "LOAD_DURATION", "LOAD_BASE_URL"):
+        assert key in template and key in script and key in runner
+    assert "constant-arrival-rate" in script

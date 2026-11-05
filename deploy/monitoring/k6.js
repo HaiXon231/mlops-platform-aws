@@ -1,15 +1,17 @@
 import http from 'k6/http';
 import { check } from 'k6';
 
-const vus = Number(__ENV.K6_VUS || 10);
-const baseUrl = __ENV.K6_BASE_URL || 'http://inference-api.mlops.svc.cluster.local:8000';
+// Không dùng K6_VUS/K6_DURATION: đó là biến gốc của k6 và chúng ghi đè toàn bộ `scenarios`,
+// khiến constant-arrival-rate bị bỏ qua. Các biến LOAD_* là của repo này.
+const vus = Number(__ENV.LOAD_VUS || 10);
+const baseUrl = __ENV.LOAD_BASE_URL || 'http://inference-api.mlops.svc.cluster.local:8000';
 export const options = {
   scenarios: {
     inference: {
       executor: 'constant-arrival-rate',
-      rate: Number(__ENV.K6_RATE || 20),
+      rate: Number(__ENV.LOAD_RATE || 20),
       timeUnit: '1s',
-      duration: __ENV.K6_DURATION || '5m',
+      duration: __ENV.LOAD_DURATION || '5m',
       preAllocatedVUs: vus,
       maxVUs: vus,
     },
