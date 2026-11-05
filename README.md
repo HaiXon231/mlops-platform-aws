@@ -136,6 +136,18 @@ make monitoring-verify
 
 Hướng dẫn setup trình bày thứ tự áp dụng Argo CD Application, Secret và kiểm tra trước khi tạo HPA; không cài Metrics Server lần hai bằng Helm.
 
+**Phase 4 (canary và rollback)** làm sau Phase 3, chi tiết và điều kiện ở [setup mục 8](docs/setup.md#8-canary-và-rollback-phase-4). Tóm tắt (cần Terraform platform đã apply, kubectl đã vào được cluster):
+
+```bash
+make canary-addons-deploy
+make canary-addons-verify
+kubectl apply -f deploy/bootstrap/m32-github-release-rbac.yaml
+make monitoring-load-test M33_TARGET=alb M33_VUS=20 M33_RATE=40 M33_DURATION_SECONDS=900   # terminal riêng, trước khi đổi Application
+kubectl apply -f deploy/argocd/inference-application-automated.yaml
+make canary-status
+make canary-split M42_WINDOW=45s
+```
+
 ## Sử dụng và kiểm chứng
 
 ```bash
@@ -165,6 +177,6 @@ Training artifact local được ghi nhận có validation MAE **3,8372 phút** 
 
 ## Chi phí, cleanup và giới hạn
 
-EKS control plane, NAT Gateway/EIP, EC2 system/Spot/On-Demand, EBS PVC, S3/ECR storage/requests, logs và data transfer có thể tính phí. `make cloud-backup` và `make cloud-restore-check BACKUP_KEY=...` kiểm tra dữ liệu trước khi dọn. `make monitoring-cleanup` gỡ monitoring; **`make cloud-teardown` backup rồi xóa cả namespace `mlops`, bao gồm inference đang chạy** nên phải gỡ Argo CD Application/serving có kiểm soát trước. `make tf-platform-down` yêu cầu xác nhận và chỉ destroy platform state sau cleanup. Không xóa persistent S3/ECR, bootstrap state hoặc training/model artifacts khi chưa có bản sao. Xem thứ tự an toàn trong [operations](docs/operations.md).
+EKS control plane, NAT Gateway/EIP, EC2 system/Spot/On-Demand, EBS PVC, S3/ECR storage/requests, logs và data transfer có thể tính phí. `make cloud-backup` và `make cloud-restore-check BACKUP_KEY=...` kiểm tra dữ liệu trước khi dọn. `make monitoring-cleanup` gỡ monitoring; **`make cloud-teardown` backup rồi xóa cả namespace `mlops`, bao gồm inference đang chạy** nên phải gỡ Argo CD Application/serving có kiểm soát trước. `make tf-platform-down` yêu cầu xác nhận và chỉ destroy platform state sau cleanup. Không xóa persistent S3/ECR, bootstrap state hoặc training/model artifacts khi chưa có bản sao. Xem thứ tự an toàn trong [operations](docs/operations.md). **Phase 4:** xóa Application không xóa Ingress/ALB; gỡ Ingress và chờ ALB biến mất trước `make tf-platform-down` (lệnh đầy đủ và kiểm tra sau khi xóa ở [setup mục 8](docs/setup.md#8-canary-và-rollback-phase-4)).
 
 Giới hạn: một NAT và PostgreSQL một replica/PVC chưa HA; một số dataset cache cũ có `source_verified=false`; Prometheus giữ metrics 24 giờ trên `emptyDir`; load test chứng minh scale replicas nhưng chưa chứng minh throughput tăng nhờ các Pod mới; release trên account/repo khác cần migration cấu hình identity và kiểm thử lại. Phase 4: ALB và node `system` thứ hai tính phí, gỡ Ingress ALB trước khi hạ VPC, và nhánh từ chối của release workflow mới được thử bằng request không hợp lệ (4xx), chưa bằng lỗi 5xx hay model lỗi thật. Phase 5 chưa triển khai.

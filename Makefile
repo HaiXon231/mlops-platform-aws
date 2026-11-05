@@ -41,7 +41,7 @@ help:
 	  'Monitoring (deploy/cleanup change Kubernetes resources; load-test costs compute):' \
 	  '  monitoring-test|deploy|verify|load-test|cleanup' \
 	  '' \
-	  'Canary observation (load via monitoring-load-test M33_TARGET=alb; split reads Prometheus):' \
+	  'Canary observation (load via monitoring-load-test M33_TARGET=alb [M33_PAYLOAD=invalid]; split reads Prometheus):' \
 	  '  canary-status                   Rollout, AnalysisRuns and ALB hostname.' \
 	  '  canary-split M42_WINDOW=2m      Request share per ReplicaSet (stable vs canary).' \
 	  '' \
