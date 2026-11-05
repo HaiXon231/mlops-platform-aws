@@ -2,7 +2,7 @@
 
 Kiểm chứng ngày **2026-11-05 (UTC)** trên cluster `mlops-aws-dev`, vùng `ap-southeast-1`, Kubernetes 1.36. Tài liệu này chỉ ghi những gì đã quan sát trực tiếp trên cluster; logs thô, mật khẩu và IP cá nhân được giữ ngoài tài liệu public. Thiết kế nằm ở [phase-04-design.md](../phases/phase-04-design.md), vận hành ở [phase-04.md](../phases/phase-04.md).
 
-**Kết luận ngắn.** Canary khỏe được phát hành qua 10% → 50% → 100% và tự promote; canary chậm bị gate độ trễ từ chối và Rollout tự abort; canary không sẵn sàng bị chặn trước khi nhận traffic; sau mỗi lần lỗi, một commit `git revert` đưa Git và cluster về đúng stable trong khoảng 10 giây. **Chưa chứng minh:** release workflow GitHub tự `git revert` (xem mục Giới hạn).
+**Kết luận ngắn.** Canary khỏe được phát hành qua 10% → 50% → 100% và tự promote; canary chậm bị gate độ trễ từ chối và Rollout tự abort; canary không sẵn sàng bị chặn trước khi nhận traffic; sau mỗi lần lỗi, một commit `git revert` đưa Git và cluster về đúng stable trong khoảng 10 giây. Release workflow GitHub chạy thật trên `main` với canary và thành công (mục 12). **Chưa chứng minh:** nhánh *abort* của workflow, tức là tự `git revert` (xem mục Giới hạn).
 
 ## 1. Cấu hình được kiểm chứng
 
@@ -104,7 +104,8 @@ Sau revert, `deployment.yaml` giống hệt bản stable (diff 0 dòng), nên Ro
 
 ## 9. Giới hạn và điều chưa được chứng minh
 
-- **Tự revert của release workflow chưa chạy thật.** `m32_release.sh` và `m32_verify.py --wait-outcome/--wait-reverted` chỉ được kiểm bằng unit test (phân loại trạng thái, thứ tự revert, không đổi `champion`, RBAC). Workflow chỉ chạy được từ `main` của repo gốc.
+- **Nhánh abort của release workflow chưa chạy thật.** Lần chạy workflow thật (mục 12) là nhánh thành công. Phần tự `git revert` trong `m32_release.sh` và `m32_verify.py --wait-outcome/--wait-reverted` chỉ được kiểm bằng unit test (phân loại trạng thái, thứ tự revert, không đổi `champion`, RBAC), vì workflow luôn build image tốt và chỉ chạy được từ `main`.
+- **Một số request timeout khi chuyển phiên bản.** Lần tải 15 phút lúc Application chuyển sang `main` (35.931 request, 39,9 req/s, p95 24,9 ms) có **32 request lỗi (0,08%)**, `max` 10 giây tức là timeout, không phải HTTP 5xx do ứng dụng trả (gate `error-rate` vẫn 0 vì ứng dụng chỉ đếm request đã tới nó). Nguyên nhân chưa được kiểm chứng; giả thuyết là Pod cũ bị gỡ khi ALB còn gửi request tới đó. Lỗi này **không lặp lại** trong lần tải suốt release thật (mục 12: 0 lỗi trên 35.921 request), nên chưa thể coi là hệ thống. Hướng xử lý thường dùng nếu lặp lại là `preStop` chờ vài giây và pod readiness gate của LB Controller; chưa áp dụng.
 - **Nhánh smoke fail chưa được thực thi.** Mọi smoke Job đã chạy đều `Successful`; khi Pod chưa Ready, Rollout dừng trước bước smoke.
 - **Gate tỷ lệ lỗi 5xx mới thấy đạt (giá trị 0), chưa thấy fail** với lỗi HTTP thật, vì không chèn lỗi vào ứng dụng (quyết định thiết kế). Truy vấn được kiểm bằng unit test và bằng các phép đo `0` trên cluster.
 - **Cỡ mẫu nhỏ:** mỗi phép đo phân phối có khoảng 1.800 request; chưa có kiểm định thống kê, chỉ so với sai số nhị thức ước tính.
@@ -135,3 +136,20 @@ kubectl -n mlops get analysisrun.argoproj.io
 ```
 
 Mỗi kịch bản là một commit trên nhánh thử sửa `deploy/gitops/inference/deployment.yaml` (annotation cho T2; `requests`/`limits` CPU cho T3/T4), đẩy lên nhánh mà Application đang trỏ tới; khôi phục bằng `git revert`.
+
+## 12. Release workflow thật trên `main`
+
+Sau khi PR #1 được merge (`a069afa`), Application Argo CD được trỏ về `main` (`kubectl apply -f deploy/argocd/inference-application-automated.yaml`). Vì annotation `release-id` trên `main` khác nhánh thử, Rollouts mở một canary khỏe cùng image; AnalysisRun `595677df86-9` đạt cả bốn gate (p95 canary 23,5–23,9 ms, so với stable −0,062, lỗi 0, tốc độ 17–20 req/s), Rollout `Healthy`. Rồi workflow `M3.2 approved model release` được dispatch từ `main` với model `nyc-taxi-trip-duration` version `1`.
+
+| Hạng mục | Kết quả |
+| --- | --- |
+| Run | `42011637577`, dispatch 10:33:05 UTC, kết thúc `success` sau khoảng 12 phút (10:45:12) |
+| Các bước | tất cả `success`: kiểm tra danh tính repo, test (`make m32-test`), OIDC, mở CIDR, export/build/deploy/verify, khôi phục CIDR |
+| CIDR EKS | ban đầu một IP quản trị `/32`; tạm thêm một IP của runner (xác nhận); sau cùng **khôi phục đúng danh sách ban đầu** (xác nhận) |
+| Commit GitOps | đúng một commit của bot, `e235328` `m32: release m32-42011637577-1 by digest` (10:36:14), khoảng 1,5 phút sau khi bước build bắt đầu |
+| Canary | AnalysisRun `7f986c76c8-10` và smoke `Successful`; Rollouts trả `{"canary": "promoted"}` lúc 10:44:10 (khoảng 8 phút sau commit) |
+| Gate (8 phép đo mỗi gate) | tỷ lệ lỗi 0; p95 canary 22,8–23,0 ms; p95 so với stable −0,061; tốc độ canary 15,5–20,2 req/s |
+| Champion | `{"champion": "already-promoted"}` lúc 10:44:39: alias vẫn là model v1, đúng vì release dùng lại model v1 |
+| Kết quả cluster | Rollout `Healthy`, stable = current = `7f986c76c8`, 3 Pod Ready; Deployment template mang image digest mới và `release-id: m32-42011637577-1` |
+
+Điều này xác nhận trên hạ tầng thật: RBAC mới của runner đủ để đọc Rollout/AnalysisRun, `rollout_state` nhận đúng trạng thái `promoted`, `main` không bị branch protection chặn bot, và trình tự "một commit GitOps → canary → verify → xác nhận `champion`" hoạt động với canary. Tải k6 được bật ngay khi commit digest xuất hiện (gate cần traffic); không có tải thì `canary-request-rate` là inconclusive. Tải suốt lần release (15 phút, 20 VU, 40 req/s): **35.921 request, 0 lỗi HTTP**, p95 25,47 ms, avg 18,7 ms, max 971 ms, 80 `dropped_iterations`.

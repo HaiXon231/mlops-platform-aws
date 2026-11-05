@@ -1,6 +1,6 @@
 # Phase 4 — Canary Deployment & Automated Rollback
 
-**Trạng thái: đã triển khai và kiểm chứng trên dev bằng canary thật; tự `git revert` của release workflow chưa chạy thật.** Thiết kế và quyết định nằm ở [phase-04-design.md](phase-04-design.md); số liệu ở [Evidence Phase 4](../evidence/phase-04.md).
+**Trạng thái: đã triển khai và kiểm chứng trên dev bằng canary thật, gồm một lần chạy release workflow thành công trên `main`; nhánh abort (tự `git revert`) của workflow chưa chạy thật.** Thiết kế và quyết định nằm ở [phase-04-design.md](phase-04-design.md); số liệu ở [Evidence Phase 4](../evidence/phase-04.md).
 
 ## 1. Mục tiêu
 Thử model candidate với một phần traffic thật và tự khôi phục stable nếu metric vận hành không đạt, đồng thời giữ GitOps nhất quán với stable sau rollback.
@@ -21,7 +21,7 @@ AWS Load Balancer Controller, ALB internal, Argo Rollouts, Prometheus AnalysisTe
 Gate (`deploy/gitops/inference/analysis-template.yaml`): tỷ lệ lỗi `< 1%`; p95 `< 0,5 s`; p95 `< 1,5 × p95 stable + 50 ms`; tốc độ request canary `>= 0,2 req/s`. Không có mẫu thì kết quả là inconclusive, không phải đạt.
 
 ## 4. Đã triển khai thực tế
-Cluster dev chạy LB Controller `v3.6.2`, Argo Rollouts `v1.10.2` và Rollout nêu trên. Đã quan sát: canary khỏe tự lên 100% (T2); canary chậm bị gate p95 từ chối ở 10% và Rollout tự abort (T3); canary không Ready bị chặn trước khi nhận traffic và `Degraded` sau `ProgressDeadlineExceeded` (T4); `git revert` đưa Git và cluster về stable trong khoảng 10 giây. Phân phối đo được: 8,7–9,4% ở bước 10% và 50,7–51,4% ở bước 50%.
+Cluster dev chạy LB Controller `v3.6.2`, Argo Rollouts `v1.10.2` và Rollout nêu trên. Đã quan sát: canary khỏe tự lên 100% (T2); canary chậm bị gate p95 từ chối ở 10% và Rollout tự abort (T3); canary không Ready bị chặn trước khi nhận traffic và `Degraded` sau `ProgressDeadlineExceeded` (T4); `git revert` đưa Git và cluster về stable trong khoảng 10 giây. Phân phối đo được: 8,7–9,4% ở bước 10% và 50,7–51,4% ở bước 50%. Release workflow thật (run `42011637577`) build image mới, qua canary khỏe, `champion` ra `already-promoted`, và CIDR EKS được khôi phục.
 
 ## 5. Luồng hoạt động
 Commit đổi template Pod vào nhánh mà Application theo dõi → Argo CD đồng bộ → Rollouts dựng canary → smoke → 10% → phân tích → 50% → phân tích → 100%. Nếu gate fail hoặc Pod không Ready, Rollout `Degraded`, weight canary về 0 và stable tiếp tục phục vụ. Với release chính thức, `scripts/m32_release.sh` chờ kết quả: promote thì verify API rồi xác nhận alias `champion`; bị từ chối thì `git revert` commit release, chờ Argo CD về stable và **không đổi `champion`**.
@@ -36,4 +36,4 @@ Tải k6 từ trong cluster vào ALB internal (biến `LOAD_*`, tốc độ cố
 [Evidence Phase 4](../evidence/phase-04.md) ghi baseline p95 32 ms ở 40 req/s, phân phối 90/10 và 50/50, T2/T3/T4, thời gian khôi phục Git và các lỗi tìm thấy khi kiểm chứng (xung đột biến k6, gate lỗi `NaN`, `abort` trống khi quá hạn tiến độ).
 
 ## 9. Hạn chế và lưu ý
-Release workflow tự `git revert` mới được kiểm bằng unit test, chưa chạy thật trên `main`. Nhánh smoke fail chưa từng thực thi; gate lỗi 5xx chưa thấy fail với lỗi HTTP thật (không chèn lỗi vào ứng dụng). Cỡ mẫu phân phối khoảng 1.800 request mỗi lần. Canary không Ready chỉ bị phát hiện sau 10 phút. ALB và node `system` thứ hai tính phí; **phải gỡ Ingress (ALB) trước `make tf-platform-down`**, và `make canary-addons-cleanup` từ chối khi còn Ingress ALB hoặc Rollout. Số k6 của Phase 3 là tải bão hòa, không so sánh trực tiếp với tải tốc độ cố định ở đây.
+Nhánh abort của release workflow (tự `git revert`) mới được kiểm bằng unit test; chỉ nhánh thành công đã chạy thật trên `main`. Nhánh smoke fail chưa từng thực thi; gate lỗi 5xx chưa thấy fail với lỗi HTTP thật (không chèn lỗi vào ứng dụng). Cỡ mẫu phân phối khoảng 1.800 request mỗi lần. Canary không Ready chỉ bị phát hiện sau 10 phút. ALB và node `system` thứ hai tính phí; **phải gỡ Ingress (ALB) trước `make tf-platform-down`**, và `make canary-addons-cleanup` từ chối khi còn Ingress ALB hoặc Rollout. Số k6 của Phase 3 là tải bão hòa, không so sánh trực tiếp với tải tốc độ cố định ở đây.

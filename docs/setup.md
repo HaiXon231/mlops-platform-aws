@@ -128,3 +128,18 @@ Cả hai Services là ClusterIP, không có Ingress. Password lấy từ Kuberne
 ## 7. Xác minh và dọn dẹp
 
 Dùng `make check`, `make cloud-verify`, `make release-gitops-verify`, `make monitoring-verify`; đọc [operations](operations.md) để xem API/UI, backup/restore và shutdown. Cleanup theo phạm vi: monitoring trước, release/inference theo GitOps, cloud data sau backup, Karpenter/bootstrap cuối cùng, rồi mới `make tf-platform-down`. Không chạy Terraform destroy persistent/bootstrap khi chưa có kế hoạch dữ liệu. Đừng coi phần hướng dẫn này là bằng chứng tái triển khai: kết quả dev đã ghi trong [evidence](evidence/), account mới cần kiểm chứng riêng.
+
+## 8. Canary và rollback (Phase 4)
+
+Làm sau khi Phase 3 (serving, HPA, monitoring) đã chạy. Chi tiết kiểm chứng ở [phase-04.md](phases/phase-04.md) và [evidence](evidence/phase-04.md).
+
+1. **Terraform platform** đã gồm `alb_controller.tf` (IAM và Pod Identity cho AWS Load Balancer Controller) và node group `system` 2 node. Module EKS bỏ qua `desired_size` trên node group đang chạy, nên nâng `desired` bằng CLI **trước** khi apply `min_size = 2`:
+   ```bash
+   aws eks update-nodegroup-config --cluster-name mlops-aws-dev --nodegroup-name system --scaling-config minSize=1,maxSize=2,desiredSize=2
+   ```
+2. **Add-on:** `make canary-addons-deploy` rồi `make canary-addons-verify` (LB Controller 3.6.2, Argo Rollouts 2.43.9). Phải xong trước khi manifest canary được Argo CD đọc; thiếu CRD `Rollout`/`AnalysisTemplate` hoặc IngressClass `alb` thì sync lỗi.
+3. **RBAC cho runner release:** `kubectl apply -f deploy/bootstrap/m32-github-release-rbac.yaml`. Trên cluster mới Role chưa tồn tại cho tới khi áp file này; bản hiện tại thêm quyền đọc `rollouts` và `analysisruns`.
+4. **Application:** `kubectl apply -f deploy/argocd/inference-application-automated.yaml` trỏ về `main`. Việc này đặt lại `targetRevision`; nếu template Pod khác bản đang chạy thì Rollouts mở một canary, nên bật tải trước (bước 5).
+5. **Tải và quan sát:** `make monitoring-load-test M33_TARGET=alb M33_VUS=20 M33_RATE=40 M33_DURATION_SECONDS=900` (tải theo tốc độ cố định vào ALB internal; gate cần traffic, không có thì `canary-request-rate` inconclusive và Rollout dừng chờ), `make canary-status`, `make canary-split M42_WINDOW=45s`.
+6. **Release thật:** nếu thư mục có nhiều remote, `gh repo set-default HaiXon231/mlops-platform-aws` trước; rồi `make release-run M31_MODEL_NAME=<name> M31_MODEL_VERSION=<version>`. EKS public CIDR phải là các `/32`; workflow từ chối `0.0.0.0/0`, và `terraform apply` ghi đè `0.0.0.0/0` đặt tay. Bật tải k6 khi commit `m32: release ... by digest` xuất hiện trên `main`.
+7. **Dọn dẹp:** gỡ Application hoặc Ingress `inference-api` và chờ ALB biến mất trước `make canary-addons-cleanup` và `make tf-platform-down`; ALB còn tồn tại giữ ENI và security group nên VPC không xóa được.
