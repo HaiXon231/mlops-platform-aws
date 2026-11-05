@@ -30,6 +30,8 @@ spec:
               value: "${LOAD_DURATION}"
             - name: LOAD_BASE_URL
               value: "${LOAD_BASE_URL}"
+            - name: LOAD_PAYLOAD
+              value: "${LOAD_PAYLOAD}"
           resources:
             requests:
               cpu: 100m

@@ -55,7 +55,7 @@ def test_load_test_can_target_alb_but_only_validated_hostnames():
     k6 = (ROOT / "deploy/monitoring/k6.js").read_text()
     assert "__ENV.LOAD_BASE_URL" in k6 and "inference-api.mlops.svc.cluster.local:8000" in k6
     template = (ROOT / "deploy/monitoring/k6-job.yaml.tpl").read_text()
-    for key, value in {"LOAD_VUS": "10", "LOAD_RATE": "20", "LOAD_DURATION": "300s",
+    for key, value in {"LOAD_VUS": "10", "LOAD_RATE": "20", "LOAD_DURATION": "300s", "LOAD_PAYLOAD": "valid",
                        "LOAD_BASE_URL": "http://internal-x.ap-southeast-1.elb.amazonaws.com"}.items():
         template = template.replace("${" + key + "}", value)
     env = {item["name"]: item["value"] for item in yaml.safe_load(template)["spec"]["template"]["spec"]["containers"][0]["env"]}
@@ -101,3 +101,31 @@ def test_load_env_names_never_collide_with_native_k6_options():
     for key in ("LOAD_VUS", "LOAD_RATE", "LOAD_DURATION", "LOAD_BASE_URL"):
         assert key in template and key in script and key in runner
     assert "constant-arrival-rate" in script
+
+
+def test_invalid_payload_mode_is_opt_in_and_only_for_the_alb():
+    script = (ROOT / "scripts/m33.sh").read_text()
+    assert 'payload="${M33_PAYLOAD:-valid}"' in script
+    assert "M33_PAYLOAD must be valid or invalid" in script
+    assert 'Invalid payloads are only allowed against the ALB' in script
+    assert "M33_PAYLOAD ?= valid" in (ROOT / "Makefile").read_text()
+    k6 = (ROOT / "deploy/monitoring/k6.js").read_text()
+    assert "LOAD_PAYLOAD || 'valid'" in k6
+    assert "expectedStatuses(422)" in k6, "a 422 must not make k6 report the run as failed"
+
+
+def test_the_invalid_payload_is_rejected_by_the_api_and_counted_as_an_error():
+    """The release abort test relies on k6's invalid request becoming a 422 that errors_total records."""
+    from inference.app import PredictionRequest
+    from inference.metrics import Metrics
+    from pydantic import ValidationError
+
+    k6 = (ROOT / "deploy/monitoring/k6.js").read_text()
+    assert "invalid ? 999 : 1" in k6
+    with pytest.raises(ValidationError):
+        PredictionRequest(pickup_location_id=999, dropoff_location_id=2, pickup_datetime="2025-04-07T16:00:00Z")
+    metrics = Metrics()
+    metrics.observe("POST", "/predict", 422, 0.01)
+    rendered = metrics.render()
+    assert 'inference_http_errors_total{method="POST",path="/predict",status="422"} 1' in rendered
+    assert 'inference_http_requests_total{method="POST",path="/predict",status="422"} 1' in rendered

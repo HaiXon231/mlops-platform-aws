@@ -137,6 +137,7 @@ M33_VUS ?= 10
 M33_RATE ?= 20
 M33_DURATION_SECONDS ?= 300
 M33_TARGET ?= service
+M33_PAYLOAD ?= valid
 
 m33-test:
 	$(UV) run --locked pytest -q tests/unit/test_m33_config.py
@@ -154,7 +155,7 @@ m33-verify:
 	bash scripts/m33.sh verify
 
 m33-load-test:
-	M33_TARGET="$(M33_TARGET)" M33_VUS="$(M33_VUS)" M33_RATE="$(M33_RATE)" M33_DURATION_SECONDS="$(M33_DURATION_SECONDS)" bash scripts/m33.sh load-test
+	M33_TARGET="$(M33_TARGET)" M33_PAYLOAD="$(M33_PAYLOAD)" M33_VUS="$(M33_VUS)" M33_RATE="$(M33_RATE)" M33_DURATION_SECONDS="$(M33_DURATION_SECONDS)" bash scripts/m33.sh load-test
 
 m33-cleanup:
 	bash scripts/m33.sh cleanup

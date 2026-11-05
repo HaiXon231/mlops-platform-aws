@@ -79,7 +79,11 @@ load_test() {
   (( vus >= 1 && vus <= 50 && rate >= 1 && rate <= 200 && seconds >= 30 && seconds <= 900 )) || {
     echo 'Limits: VUS 1-50, RATE 1-200 requests/s, DURATION_SECONDS 30-900' >&2; exit 2;
   }
-  local target="${M33_TARGET:-service}" base_url host
+  local target="${M33_TARGET:-service}" payload="${M33_PAYLOAD:-valid}" base_url host
+  [[ "$payload" == valid || "$payload" == invalid ]] || { echo 'M33_PAYLOAD must be valid or invalid' >&2; exit 2; }
+  if [[ "$payload" == invalid && "$target" != alb ]]; then
+    echo 'Invalid payloads are only allowed against the ALB during a canary test (M33_TARGET=alb)' >&2; exit 2
+  fi
   case "$target" in
     service) base_url='http://inference-api.mlops.svc.cluster.local:8000' ;;
     alb)
@@ -92,10 +96,10 @@ load_test() {
   kubectl -n mlops create configmap m33-k6-script --from-file=k6.js="$monitor/k6.js" \
     --dry-run=client -o yaml | kubectl apply -f -
   local job
-  job="$(LOAD_VUS="$vus" LOAD_RATE="$rate" LOAD_DURATION="${seconds}s" LOAD_BASE_URL="$base_url" python3 - "$monitor/k6-job.yaml.tpl" <<'PY' | kubectl create -f - -o name
+  job="$(LOAD_VUS="$vus" LOAD_RATE="$rate" LOAD_DURATION="${seconds}s" LOAD_BASE_URL="$base_url" LOAD_PAYLOAD="$payload" python3 - "$monitor/k6-job.yaml.tpl" <<'PY' | kubectl create -f - -o name
 import os, pathlib, sys
 content = pathlib.Path(sys.argv[1]).read_text()
-for key in ("LOAD_VUS", "LOAD_RATE", "LOAD_DURATION", "LOAD_BASE_URL"):
+for key in ("LOAD_VUS", "LOAD_RATE", "LOAD_DURATION", "LOAD_BASE_URL", "LOAD_PAYLOAD"):
     content = content.replace("${" + key + "}", os.environ[key])
 print(content)
 PY

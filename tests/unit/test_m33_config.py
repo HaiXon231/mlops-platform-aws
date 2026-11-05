@@ -75,7 +75,7 @@ def test_discovery_rbac_and_load_job_stay_in_scope():
     assert binding["subjects"][0]["namespace"] == "monitoring"
 
     template = (ROOT / "deploy/monitoring/k6-job.yaml.tpl").read_text()
-    for key, value in {"LOAD_VUS": "10", "LOAD_RATE": "20", "LOAD_DURATION": "300s"}.items():
+    for key, value in {"LOAD_VUS": "10", "LOAD_RATE": "20", "LOAD_DURATION": "300s", "LOAD_PAYLOAD": "valid"}.items():
         template = template.replace("${" + key + "}", value)
     job = yaml.safe_load(template)
     assert job["metadata"]["namespace"] == "mlops"
