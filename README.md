@@ -1,6 +1,6 @@
 # MLOps Platform on AWS
 
-Nền tảng MLOps dự đoán **thời lượng chuyến NYC Yellow Taxi** từ điểm đón, điểm trả và thời gian đón. Dự án đi từ dữ liệu Parquet đến LightGBM, MLflow Model Registry, image FastAPI, GitHub Actions release, Argo CD và monitoring trên Amazon EKS. [Proposal/Implementation Plan v1.0.1](MLOps_AWS_Implementation_Plan_v1.0.1.md) định nghĩa phạm vi năm Phase. **Phase 1–3 đã triển khai trên môi trường dev**; Phase 4–5 chưa triển khai.
+Nền tảng MLOps dự đoán **thời lượng chuyến NYC Yellow Taxi** từ điểm đón, điểm trả và thời gian đón. Dự án đi từ dữ liệu Parquet đến LightGBM, MLflow Model Registry, image FastAPI, GitHub Actions release, Argo CD và monitoring trên Amazon EKS. [Proposal/Implementation Plan v1.0.1](MLOps_AWS_Implementation_Plan_v1.0.1.md) định nghĩa phạm vi năm Phase. **Phase 1–3 đã triển khai trên môi trường dev**; Phase 4 đã kiểm chứng canary trên dev (tự `git revert` của release workflow chưa chạy thật); Phase 5 chưa triển khai.
 
 ## Kiến trúc
 
@@ -158,7 +158,7 @@ kubectl get nodeclaims
 | [1 — Infrastructure](docs/phases/phase-01.md) | Terraform, VPC/EKS, Karpenter, Argo CD, persistent resources | Đã triển khai dev |
 | [2 — Training & Registry](docs/phases/phase-02.md) | NYC Taxi, LightGBM, Spot Job, MLflow, backup/restore | Đã triển khai dev |
 | [3 — Serving & Observability](docs/phases/phase-03.md) | FastAPI, release, GitOps, HPA, monitoring | Đã triển khai dev |
-| [4 — Canary & Rollback](docs/phases/phase-04.md) | Progressive delivery và rollback theo metric | Chưa triển khai |
+| [4 — Canary & Rollback](docs/phases/phase-04.md) | Progressive delivery và rollback theo metric | Đã kiểm chứng dev (xem giới hạn) |
 | [5 — Drift & Retraining](docs/phases/phase-05.md) | Batch drift, alert và retraining có gate | Chưa triển khai |
 
 Training artifact local được ghi nhận có validation MAE **3,8372 phút** và test MAE **4,1301 phút** trên mỗi tập 100.000 dòng đã lấy mẫu. Cloud Registry có approved model version 1; GitHub Actions đã tạo digest-pinned image và Argo CD triển khai. Bài k6 gửi **55.398 requests, 0 HTTP failures**; HPA scale **1→3→1** Pods. [Evidence theo Phase](docs/evidence/) nêu nguồn số liệu và giới hạn kiểm chứng.
@@ -167,4 +167,4 @@ Training artifact local được ghi nhận có validation MAE **3,8372 phút** 
 
 EKS control plane, NAT Gateway/EIP, EC2 system/Spot/On-Demand, EBS PVC, S3/ECR storage/requests, logs và data transfer có thể tính phí. `make cloud-backup` và `make cloud-restore-check BACKUP_KEY=...` kiểm tra dữ liệu trước khi dọn. `make monitoring-cleanup` gỡ monitoring; **`make cloud-teardown` backup rồi xóa cả namespace `mlops`, bao gồm inference đang chạy** nên phải gỡ Argo CD Application/serving có kiểm soát trước. `make tf-platform-down` yêu cầu xác nhận và chỉ destroy platform state sau cleanup. Không xóa persistent S3/ECR, bootstrap state hoặc training/model artifacts khi chưa có bản sao. Xem thứ tự an toàn trong [operations](docs/operations.md).
 
-Giới hạn: một NAT và PostgreSQL một replica/PVC chưa HA; một số dataset cache cũ có `source_verified=false`; Prometheus giữ metrics 24 giờ trên `emptyDir`; load test chứng minh scale replicas nhưng chưa chứng minh throughput tăng nhờ các Pod mới; release trên account/repo khác cần migration cấu hình identity và kiểm thử lại. Phase 4–5 chưa triển khai.
+Giới hạn: một NAT và PostgreSQL một replica/PVC chưa HA; một số dataset cache cũ có `source_verified=false`; Prometheus giữ metrics 24 giờ trên `emptyDir`; load test chứng minh scale replicas nhưng chưa chứng minh throughput tăng nhờ các Pod mới; release trên account/repo khác cần migration cấu hình identity và kiểm thử lại. Phase 4: ALB và node `system` thứ hai tính phí, gỡ Ingress ALB trước khi hạ VPC, và tự `git revert` của release workflow mới được kiểm bằng unit test. Phase 5 chưa triển khai.

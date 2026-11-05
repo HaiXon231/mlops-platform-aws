@@ -43,6 +43,12 @@ Nếu workflow bị gián đoạn, kiểm tra EKS `publicAccessCidrs` đã bằn
 
 Argo CD UI: `make argocd-port-forward` rồi mở `https://127.0.0.1:8080`. Password/SSO tuân theo cấu hình cluster, không nằm trong repository. Application `inference-api` phải Synced/Healthy và chỉ sở hữu Deployment, Service, HPA trong `mlops`.
 
+## Canary (Phase 4)
+
+Add-on: `make canary-addons-deploy` rồi `make canary-addons-verify` (LB Controller và Argo Rollouts, cần Terraform platform đã apply). Quan sát: `make canary-status` (Rollout, AnalysisRun, ALB), `make canary-split M42_WINDOW=45s` (tỷ lệ request theo ReplicaSet, cửa sổ phải nằm trong một bước canary). Tải qua ALB: `make monitoring-load-test M33_TARGET=alb` (biến tải là `LOAD_*`, tốc độ cố định). Rollout `Paused` do AnalysisRun `Inconclusive` cần xem `kubectl -n mlops get analysisrun.argoproj.io <tên> -o yaml`; `Degraded` có thể không có `status.abort` khi chỉ là `ProgressDeadlineExceeded`. Khôi phục Git sau canary hỏng bằng `git revert` commit đã đổi template, không sửa Rollout bằng tay vì Argo CD `selfHeal` sẽ ghi đè.
+
+Dọn dẹp: gỡ Application hoặc Ingress `inference-api` và **chờ ALB biến mất** trước `make canary-addons-cleanup` và `make tf-platform-down`; ALB còn tồn tại giữ ENI/security group và chặn xóa VPC. Public API EKS chỉ nhận IP `/32`; `0.0.0.0/0` đặt tay sẽ bị `terraform apply` ghi đè và release workflow từ chối chạy.
+
 ## Monitoring và load test
 
 Terminal riêng:

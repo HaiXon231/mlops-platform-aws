@@ -41,6 +41,13 @@ help:
 	  'Monitoring (deploy/cleanup change Kubernetes resources; load-test costs compute):' \
 	  '  monitoring-test|deploy|verify|load-test|cleanup' \
 	  '' \
+	  'Canary observation (load via monitoring-load-test M33_TARGET=alb; split reads Prometheus):' \
+	  '  canary-status                   Rollout, AnalysisRuns and ALB hostname.' \
+	  '  canary-split M42_WINDOW=2m      Request share per ReplicaSet (stable vs canary).' \
+	  '' \
+	  'Canary add-ons (deploy installs LB Controller + Argo Rollouts; apply platform first):' \
+	  '  canary-addons-test|deploy|verify|cleanup' \
+	  '' \
 	  'Verification and cleanup:' \
 	  '  check                           All local Python unit/integration tests.' \
 	  '  cloud-teardown                  Back up, then delete mlops namespace incl. serving; stop GitOps first.' \
@@ -88,10 +95,48 @@ m32-promotion-verify:
 m32-release:
 	gh workflow run m32-release.yml --ref main -f model_name="$(M31_MODEL_NAME)" -f model_version="$(M31_MODEL_VERSION)"
 
+.PHONY: m42-test m42-status m42-split canary-status canary-split
+M42_WINDOW ?= 2m
+canary-status: m42-status
+canary-split: m42-split
+
+m42-test:
+	$(UV) run --locked pytest -q tests/unit/test_m42_canary_tools.py
+	bash -n scripts/m42.sh
+
+m42-status:
+	bash scripts/m42.sh status
+
+m42-split:
+	M42_WINDOW="$(M42_WINDOW)" bash scripts/m42.sh split
+
+.PHONY: m41-test m41-deploy m41-verify m41-cleanup canary-addons-test canary-addons-deploy canary-addons-verify canary-addons-cleanup
+canary-addons-test: m41-test
+canary-addons-deploy: m41-deploy
+canary-addons-verify: m41-verify
+canary-addons-cleanup: m41-cleanup
+
+m41-test:
+	$(UV) run --locked pytest -q tests/unit/test_m4_manifests.py tests/unit/test_m41_addons.py
+	bash -n scripts/m41.sh
+	kubectl kustomize deploy/gitops/inference >/dev/null
+	helm template aws-load-balancer-controller aws-load-balancer-controller --repo https://aws.github.io/eks-charts --version 3.6.2 --namespace kube-system -f deploy/platform/aws-load-balancer-controller-values.yaml --set-string clusterName=mlops-aws-dev --set-string region=ap-southeast-1 --set-string vpcId=vpc-00000000 >/dev/null
+	helm template argo-rollouts argo-rollouts --repo https://argoproj.github.io/argo-helm --version 2.43.9 --namespace argo-rollouts -f deploy/platform/argo-rollouts-values.yaml >/dev/null
+
+m41-deploy:
+	bash scripts/m41.sh deploy
+
+m41-verify:
+	bash scripts/m41.sh verify
+
+m41-cleanup:
+	bash scripts/m41.sh cleanup
+
 .PHONY: m33-test m33-deploy m33-verify m33-load-test m33-cleanup
 M33_VUS ?= 10
 M33_RATE ?= 20
 M33_DURATION_SECONDS ?= 300
+M33_TARGET ?= service
 
 m33-test:
 	$(UV) run --locked pytest -q tests/unit/test_m33_config.py
@@ -109,7 +154,7 @@ m33-verify:
 	bash scripts/m33.sh verify
 
 m33-load-test:
-	M33_VUS="$(M33_VUS)" M33_RATE="$(M33_RATE)" M33_DURATION_SECONDS="$(M33_DURATION_SECONDS)" bash scripts/m33.sh load-test
+	M33_TARGET="$(M33_TARGET)" M33_VUS="$(M33_VUS)" M33_RATE="$(M33_RATE)" M33_DURATION_SECONDS="$(M33_DURATION_SECONDS)" bash scripts/m33.sh load-test
 
 m33-cleanup:
 	bash scripts/m33.sh cleanup

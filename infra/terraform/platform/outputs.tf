@@ -107,3 +107,8 @@ output "m32_github_release_access_group" {
   description = "Kubernetes RBAC group granted to the GitHub release role through its EKS Access Entry."
   value       = "mlops-github-release"
 }
+
+output "alb_controller_role_arn" {
+  description = "Pod Identity role for kube-system/aws-load-balancer-controller."
+  value       = aws_iam_role.alb_controller.arn
+}

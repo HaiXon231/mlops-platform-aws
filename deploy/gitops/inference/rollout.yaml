@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: inference-api
+  namespace: mlops
+  labels:
+    app: inference-api
+spec:
+  # Số replica do HPA quản lý (xem hpa.yaml và ignoreDifferences trong Application).
+  replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 600
+  # Pod template lấy từ Deployment hiện có, nên release chỉ cần sửa deployment.yaml.
+  # Sau khi Rollout Healthy, Deployment được thu về 0 replica.
+  workloadRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inference-api
+    scaleDown: onsuccess
+  strategy:
+    canary:
+      stableService: inference-api
+      canaryService: inference-api-canary
+      trafficRouting:
+        alb:
+          ingress: inference-api
+          servicePort: 8000
+      analysis:
+        # Chạy nền suốt rollout: canary tắc nghẽn hoặc lỗi thì abort ngay,
+        # không đợi tới bước kế tiếp.
+        startingStep: 3
+        templates:
+          - templateName: inference-canary-gate
+        args:
+          - name: canary-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+          - name: stable-hash
+            valueFrom:
+              podTemplateHashValue: Stable
+      steps:
+        # Bước 0: canary có 1 Pod nhưng chưa nhận traffic; smoke test gọi thẳng Service canary.
+        - setCanaryScale:
+            replicas: 1
+        - setWeight: 0
+        - analysis:
+            templates:
+              - templateName: inference-canary-smoke
+        # Bước 1: 10% traffic, đo metric vận hành.
+        - setWeight: 10
+        - pause:
+            duration: 2m
+        # Bước 2: 50% traffic.
+        - setWeight: 50
+        - pause:
+            duration: 2m
+        # Hết bước cuối: Rollouts tự đưa canary lên 100%.

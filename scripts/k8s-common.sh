@@ -8,6 +8,8 @@ AWS_REGION="${AWS_REGION:-ap-southeast-1}"
 CLUSTER_NAME=mlops-aws-dev
 KARPENTER_VERSION=1.14.1
 ARGOCD_CHART_VERSION=10.10.5
+ALB_CONTROLLER_CHART_VERSION=3.6.2
+ARGO_ROLLOUTS_CHART_VERSION=2.43.9
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || { echo "Missing command: $1" >&2; exit 1; }

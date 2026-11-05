@@ -22,12 +22,14 @@ spec:
           image: grafana/k6:1.8.2
           command: [k6, run, /scripts/k6.js]
           env:
-            - name: K6_VUS
-              value: "${K6_VUS}"
-            - name: K6_RATE
-              value: "${K6_RATE}"
-            - name: K6_DURATION
-              value: "${K6_DURATION}"
+            - name: LOAD_VUS
+              value: "${LOAD_VUS}"
+            - name: LOAD_RATE
+              value: "${LOAD_RATE}"
+            - name: LOAD_DURATION
+              value: "${LOAD_DURATION}"
+            - name: LOAD_BASE_URL
+              value: "${LOAD_BASE_URL}"
           resources:
             requests:
               cpu: 100m

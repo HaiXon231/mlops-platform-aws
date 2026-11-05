@@ -6,3 +6,4 @@ Các bản tóm tắt này chỉ ghi kết quả đã có trong repository, Git 
 - [Phase 2 — training và Registry](phase-02.md)
 - [Phase 3 — serving, release và monitoring](phase-03.md)
 - [Mẫu HPA theo thời gian](phase-03-hpa-samples.csv)
+- [Phase 4 — canary và rollback](phase-04.md)

@@ -89,8 +89,35 @@ fi
   echo "Serving image: $image"
 } >> "$GITHUB_STEP_SUMMARY"
 
+# Argo Rollouts chạy canary (smoke, 10%, 50%) rồi tự promote hoặc abort. Exit 3 = canary bị từ chối.
+set +e
 uv run --locked python scripts/m32_verify.py --expected "$expected" --commit "$commit" \
-  --mlflow-uri "$MLFLOW_TRACKING_URI" --inference-uri http://127.0.0.1:18000 --wait-only
+  --mlflow-uri "$MLFLOW_TRACKING_URI" --inference-uri http://127.0.0.1:18000 --wait-outcome
+outcome=$?
+set -e
+if [[ "$outcome" -eq 3 ]]; then
+  echo "Canary for $release_id was rejected; reverting GitOps commit $commit so main matches the stable release." >&2
+  git fetch origin main
+  if [[ "$(git rev-parse origin/main)" != "$commit" ]]; then
+    echo "main moved after the release commit; refusing automatic revert. Stable still serves traffic." >&2
+    exit 1
+  fi
+  git revert --no-edit "$commit"
+  revert_commit="$(git rev-parse HEAD)"
+  if ! git push origin HEAD:main; then
+    echo "Revert $revert_commit was rejected by main. Stable still serves, but Git still names the rejected digest." >&2
+    exit 1
+  fi
+  {
+    echo "Canary rejected: $release_id; GitOps revert commit: $revert_commit"
+    echo "champion alias was NOT changed."
+  } >> "$GITHUB_STEP_SUMMARY"
+  uv run --locked python scripts/m32_verify.py --expected "$expected" --commit "$revert_commit" \
+    --mlflow-uri "$MLFLOW_TRACKING_URI" --inference-uri http://127.0.0.1:18000 --wait-reverted
+  echo "Release $release_id failed its canary gates; stable restored and recorded in Git." >&2
+  exit 1
+fi
+[[ "$outcome" -eq 0 ]] || exit "$outcome"
 kubectl -n mlops port-forward --address 127.0.0.1 service/inference-api 18000:8000 >"$RUNNER_TEMP/m32-inference-tunnel.log" 2>&1 &
 inference_pid=$!
 wait_tunnel "$inference_pid" http://127.0.0.1:18000/healthz "$RUNNER_TEMP/m32-inference-tunnel.log"

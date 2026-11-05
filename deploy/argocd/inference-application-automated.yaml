@@ -19,6 +19,12 @@ spec:
       namespace: mlops
       jsonPointers:
         - /spec/replicas
+    - group: argoproj.io
+      kind: Rollout
+      name: inference-api
+      namespace: mlops
+      jsonPointers:
+        - /spec/replicas
   syncPolicy:
     automated:
       prune: false

@@ -18,7 +18,7 @@ def test_hpa_and_argocd_agree_on_replica_ownership():
     kustomization = read_yaml("deploy/gitops/inference/kustomization.yaml")
     assert hpa["apiVersion"] == "autoscaling/v2"
     assert hpa["spec"]["scaleTargetRef"] == {
-        "apiVersion": "apps/v1", "kind": "Deployment", "name": "inference-api"
+        "apiVersion": "argoproj.io/v1alpha1", "kind": "Rollout", "name": "inference-api"
     }
     assert (hpa["spec"]["minReplicas"], hpa["spec"]["maxReplicas"]) == (1, 3)
     assert hpa["spec"]["metrics"][0]["resource"] == {
@@ -26,6 +26,9 @@ def test_hpa_and_argocd_agree_on_replica_ownership():
     }
     assert "hpa.yaml" in kustomization["resources"]
     assert any("/spec/replicas" in item.get("jsonPointers", []) for item in app["spec"]["ignoreDifferences"])
+    ignored = {item["kind"] for item in app["spec"]["ignoreDifferences"]
+               if "/spec/replicas" in item.get("jsonPointers", [])}
+    assert {"Deployment", "Rollout"} <= ignored
     assert "RespectIgnoreDifferences=true" in app["spec"]["syncPolicy"]["syncOptions"]
     assert app["spec"]["syncPolicy"]["automated"] == {"prune": False, "selfHeal": True}
 
@@ -55,7 +58,8 @@ def test_monitoring_is_private_ephemeral_and_scrapes_inference_pods_only():
 def test_dashboard_matches_serving_metrics_contract():
     dashboard = json.loads((ROOT / "deploy/monitoring/inference-dashboard.json").read_text())
     queries = [panel["targets"][0]["expr"] for panel in dashboard["panels"]]
-    assert len(queries) == 4
+    assert len(queries) == 7  # 4 panel Phase 3 + 3 panel canary theo ReplicaSet
+    assert sum('rollouts_pod_template_hash' in query for query in queries) == 3
     assert any("inference_http_requests_total" in query for query in queries)
     assert any("histogram_quantile" in query and "inference_http_request_duration_seconds_bucket" in query for query in queries)
     assert any("inference_http_errors_total" in query and "or vector(0)" in query for query in queries)
@@ -71,7 +75,7 @@ def test_discovery_rbac_and_load_job_stay_in_scope():
     assert binding["subjects"][0]["namespace"] == "monitoring"
 
     template = (ROOT / "deploy/monitoring/k6-job.yaml.tpl").read_text()
-    for key, value in {"K6_VUS": "10", "K6_RATE": "20", "K6_DURATION": "300s"}.items():
+    for key, value in {"LOAD_VUS": "10", "LOAD_RATE": "20", "LOAD_DURATION": "300s"}.items():
         template = template.replace("${" + key + "}", value)
     job = yaml.safe_load(template)
     assert job["metadata"]["namespace"] == "mlops"

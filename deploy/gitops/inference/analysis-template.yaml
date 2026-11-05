@@ -1,0 +1,121 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: inference-canary-gate
+  namespace: mlops
+spec:
+  args:
+    - name: canary-hash
+    - name: stable-hash
+  metrics:
+    # Tỷ lệ lỗi của canary. Counter lỗi chỉ xuất hiện sau lỗi đầu tiên, nên tử số phải rơi về 0
+    # khi chưa có lỗi (nếu không phép chia rỗng và gate luôn inconclusive). Không có request nào
+    # thì mẫu số rỗng, kết quả là NaN (inconclusive), không phải "đạt".
+    - name: error-rate
+      interval: 30s
+      failureLimit: 1
+      inconclusiveLimit: 3
+      successCondition: result[0] < 0.01
+      failureCondition: result[0] >= 0.01
+      provider:
+        prometheus:
+          address: http://m33-prometheus-server.monitoring.svc.cluster.local:80
+          query: |
+            (
+              (sum(rate(inference_http_errors_total{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m])) or vector(0))
+              /
+              sum(rate(inference_http_requests_total{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m]))
+            ) or (vector(0) / vector(0))
+    # p95 tuyệt đối của canary.
+    - name: p95-latency-seconds
+      interval: 30s
+      failureLimit: 1
+      inconclusiveLimit: 3
+      successCondition: result[0] < 0.5
+      failureCondition: result[0] >= 0.5
+      provider:
+        prometheus:
+          address: http://m33-prometheus-server.monitoring.svc.cluster.local:80
+          query: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(inference_http_request_duration_seconds_bucket{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[2m]))
+            ) or (vector(0) / vector(0))
+    # p95 của canary không được vượt 1,5 lần p95 của stable cộng 50 ms.
+    # Giá trị < 0 nghĩa là đạt.
+    - name: p95-latency-vs-stable
+      interval: 30s
+      failureLimit: 1
+      inconclusiveLimit: 3
+      successCondition: result[0] < 0
+      failureCondition: result[0] >= 0
+      provider:
+        prometheus:
+          address: http://m33-prometheus-server.monitoring.svc.cluster.local:80
+          query: |
+            (
+              histogram_quantile(0.95, sum by (le) (rate(inference_http_request_duration_seconds_bucket{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[2m])))
+              -
+              (1.5 * histogram_quantile(0.95, sum by (le) (rate(inference_http_request_duration_seconds_bucket{path="/predict",rollouts_pod_template_hash="{{args.stable-hash}}"}[2m]))) + 0.05)
+            ) or (vector(0) / vector(0))
+    # Cần đủ lượng request ở canary, nếu không các gate trên không có ý nghĩa.
+    - name: canary-request-rate
+      interval: 30s
+      failureLimit: 3
+      inconclusiveLimit: 3
+      successCondition: result[0] >= 0.2
+      failureCondition: result[0] < 0.2
+      provider:
+        prometheus:
+          address: http://m33-prometheus-server.monitoring.svc.cluster.local:80
+          query: |
+            sum(rate(inference_http_requests_total{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m]))
+            or (vector(0) / vector(0))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: inference-canary-smoke
+  namespace: mlops
+spec:
+  metrics:
+    # Gọi thẳng Service canary khi canary chưa nhận traffic thật.
+    - name: canary-smoke
+      count: 1
+      provider:
+        job:
+          spec:
+            backoffLimit: 1
+            activeDeadlineSeconds: 180
+            template:
+              spec:
+                restartPolicy: Never
+                nodeSelector:
+                  eks.amazonaws.com/nodegroup: system
+                containers:
+                  - name: smoke
+                    image: curlimages/curl:8.11.1
+                    command:
+                      - sh
+                      - -c
+                      - |
+                        set -eu
+                        base=http://inference-api-canary.mlops.svc.cluster.local:8000
+                        curl -fsS --max-time 10 "$base/readyz" | grep -q '"ready"'
+                        curl -fsS --max-time 10 "$base/model-info" | grep -q '"approval_status":"approved"'
+                        curl -fsS --max-time 10 -X POST "$base/predict" \
+                          -H 'content-type: application/json' \
+                          -d '{"pickup_location_id":1,"dropoff_location_id":2,"pickup_datetime":"2025-04-07T16:00:00Z"}' \
+                          | grep -q '"predicted_duration_minutes"'
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 16Mi
+                      limits:
+                        cpu: 100m
+                        memory: 64Mi
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      runAsNonRoot: true
+                      runAsUser: 10001
+                      capabilities:
+                        drop: [ALL]
