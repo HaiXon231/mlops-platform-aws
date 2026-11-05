@@ -31,4 +31,4 @@ Service `inference-api` là ClusterIP port 8000. FastAPI validate input và time
 
 ## Phạm vi chưa có
 
-Phase 4 chưa có ALB/Argo Rollouts/automated rollback. Phase 5 chưa có drift detection hoặc retraining trigger. Một replica PostgreSQL, một NAT và metrics ephemeral chưa đáp ứng HA.
+Phase 4 thêm ALB internal, Argo Rollouts (`Rollout` nhận Deployment qua `workloadRef`), AnalysisTemplate theo Prometheus và `git revert` khôi phục stable; xem [phase-04.md](phases/phase-04.md). Phase 5 chưa có drift detection hoặc retraining trigger. Một replica PostgreSQL, một NAT và metrics ephemeral chưa đáp ứng HA.
