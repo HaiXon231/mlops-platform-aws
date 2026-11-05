@@ -58,7 +58,8 @@ def test_monitoring_is_private_ephemeral_and_scrapes_inference_pods_only():
 def test_dashboard_matches_serving_metrics_contract():
     dashboard = json.loads((ROOT / "deploy/monitoring/inference-dashboard.json").read_text())
     queries = [panel["targets"][0]["expr"] for panel in dashboard["panels"]]
-    assert len(queries) == 4
+    assert len(queries) == 7  # 4 panel Phase 3 + 3 panel canary theo ReplicaSet
+    assert sum('rollouts_pod_template_hash' in query for query in queries) == 3
     assert any("inference_http_requests_total" in query for query in queries)
     assert any("histogram_quantile" in query and "inference_http_request_duration_seconds_bucket" in query for query in queries)
     assert any("inference_http_errors_total" in query and "or vector(0)" in query for query in queries)

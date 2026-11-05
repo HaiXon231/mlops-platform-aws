@@ -13,6 +13,8 @@ from urllib.request import Request, urlopen
 from mlflow import MlflowClient
 from mlflow.exceptions import MlflowException
 
+EXIT_CANARY_ABORTED = 3
+
 
 def command_json(*arguments: str) -> dict:
     result = subprocess.run(["kubectl", "--request-timeout=15s", *arguments, "-o", "json"],
@@ -34,31 +36,102 @@ def application_matches(commit: str) -> bool:
             app.get("status", {}).get("health", {}).get("status") == "Healthy")
 
 
-def workload_matches(expected: dict) -> bool:
-    deployment = command_json("-n", "mlops", "get", "deployment", "inference-api")
+def template_matches(deployment: dict, expected: dict) -> bool:
+    """The Deployment is the release template (Rollout adopts it through workloadRef)."""
     template = deployment["spec"]["template"]
-    spec = template["spec"]
-    status = deployment.get("status", {})
-    replicas = deployment["spec"]["replicas"]
-    if (spec["containers"][0]["image"] != expected["image"] or
-        template["metadata"]["annotations"].get("mlops.aws/release-id") != expected["release_id"] or
-        template["metadata"]["annotations"].get("mlops.aws/artifact-checksum") != expected["artifact_checksum"] or
-        template["metadata"]["labels"].get("mlops.aws/model-version") != expected["model_version"] or
-        status.get("observedGeneration", 0) < deployment["metadata"]["generation"] or
-        status.get("availableReplicas", 0) != replicas or status.get("readyReplicas", 0) != replicas):
-        return False
-    pods = command_json("-n", "mlops", "get", "pods", "-l", "app=inference-api")["items"]
+    return (template["spec"]["containers"][0]["image"] == expected["image"] and
+            template["metadata"]["annotations"].get("mlops.aws/release-id") == expected["release_id"] and
+            template["metadata"]["annotations"].get("mlops.aws/artifact-checksum") == expected["artifact_checksum"] and
+            template["metadata"]["labels"].get("mlops.aws/model-version") == expected["model_version"])
+
+
+def rollout_state(deployment: dict, rollout: dict, expected: dict) -> str:
+    """Classify the live Rollout for this release: promoted, aborted or progressing.
+
+    "promoted" means the new ReplicaSet is the stable one and nothing else is rolling.
+    "aborted" means Argo Rollouts rejected this exact template; the stable ReplicaSet still
+    serves the previous release.
+    """
+    if not template_matches(deployment, expected):
+        return "progressing"
+    status = rollout.get("status", {})
+    # With workloadRef, the controller records which Deployment generation it has seen.
+    if str(status.get("workloadObservedGeneration", "")) != str(deployment["metadata"]["generation"]):
+        return "progressing"
+    current, stable = status.get("currentPodHash"), status.get("stableRS")
+    if status.get("abort") is True or status.get("phase") == "Degraded":
+        return "aborted" if current and current != stable else "progressing"
+    if status.get("phase") == "Healthy" and current and current == stable:
+        return "promoted"
+    return "progressing"
+
+
+def promoted_pods_ready(rollout: dict, expected: dict) -> bool:
+    """Every live Pod of the stable ReplicaSet runs the released digest and is Ready."""
+    stable = rollout["status"]["stableRS"]
+    pods = command_json("-n", "mlops", "get", "pods", "-l",
+                        f"app=inference-api,rollouts-pod-template-hash={stable}")["items"]
     active = [pod for pod in pods if not pod["metadata"].get("deletionTimestamp")]
     digest = expected["image"].split("@", 1)[1]
-    return (len(active) == replicas and all(
+    return bool(active) and all(
         pod["spec"]["containers"][0]["image"] == expected["image"] and
         pod.get("status", {}).get("containerStatuses") and
         pod["status"]["containerStatuses"][0].get("ready") and
         pod["status"]["containerStatuses"][0].get("imageID", "").endswith(digest)
-        for pod in active))
+        for pod in active)
+
+
+def live_state(expected: dict) -> str:
+    deployment = command_json("-n", "mlops", "get", "deployment", "inference-api")
+    rollout = command_json("-n", "mlops", "get", "rollout.argoproj.io", "inference-api")
+    state = rollout_state(deployment, rollout, expected)
+    if state == "promoted" and not promoted_pods_ready(rollout, expected):
+        return "progressing"
+    return state
+
+
+def workload_matches(expected: dict) -> bool:
+    return live_state(expected) == "promoted"
+
+
+def wait_for_outcome(expected: dict, commit: str, timeout: int = 1800) -> str:
+    """Block until the canary is promoted ("promoted") or rejected ("aborted")."""
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        if current_main() != commit:
+            raise RuntimeError("main moved to another release before deployment completed")
+        try:
+            state = live_state(expected)
+            if state == "aborted":
+                return "aborted"
+            if state == "promoted" and application_matches(commit):
+                return "promoted"
+        except (subprocess.CalledProcessError, KeyError, ValueError) as error:
+            last_error = str(error)
+        time.sleep(10)
+    raise TimeoutError(f"Canary did not finish promotion or abort in time: {last_error}")
+
+
+def wait_for_reverted(commit: str, timeout: int = 900) -> None:
+    """After a revert commit, Argo CD must be Synced/Healthy at it and the Rollout stable again."""
+    deadline = time.monotonic() + timeout
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            rollout = command_json("-n", "mlops", "get", "rollout.argoproj.io", "inference-api")
+            status = rollout.get("status", {})
+            if (application_matches(commit) and status.get("phase") == "Healthy" and
+                    status.get("currentPodHash") == status.get("stableRS")):
+                return
+        except (subprocess.CalledProcessError, KeyError, ValueError) as error:
+            last_error = str(error)
+        time.sleep(10)
+    raise TimeoutError(f"Rollback commit did not return the Rollout to stable: {last_error}")
 
 
 def wait_for_release(expected: dict, commit: str, timeout: int = 900) -> None:
+    """Wait until this release is fully promoted (kept for the verify-after-promotion path)."""
     deadline = time.monotonic() + timeout
     last_error = None
     while time.monotonic() < deadline:
@@ -70,7 +143,7 @@ def wait_for_release(expected: dict, commit: str, timeout: int = 900) -> None:
         except (subprocess.CalledProcessError, KeyError, ValueError) as error:
             last_error = str(error)
         time.sleep(10)
-    raise TimeoutError(f"Argo CD or serving Deployment did not reach this release: {last_error}")
+    raise TimeoutError(f"Argo CD or serving Rollout did not reach this release: {last_error}")
 
 
 def get_json(url: str) -> dict:
@@ -146,8 +219,23 @@ def main() -> None:
     parser.add_argument("--inference-uri", required=True)
     parser.add_argument("--wait-only", action="store_true",
                         help="Wait for Argo and the new Pod before opening an inference port-forward")
+    parser.add_argument("--wait-outcome", action="store_true",
+                        help="Wait for the canary to be promoted (exit 0) or aborted (exit 3)")
+    parser.add_argument("--wait-reverted", action="store_true",
+                        help="Wait until --commit (a revert) is live and the Rollout is stable again")
     args = parser.parse_args()
     expected = json.loads(args.expected.read_text(encoding="utf-8"))
+    if args.wait_reverted:
+        wait_for_reverted(args.commit)
+        print(json.dumps({"gitops_commit": args.commit, "rollback": "stable-restored"}, sort_keys=True))
+        return
+    if args.wait_outcome:
+        outcome = wait_for_outcome(expected, args.commit)
+        print(json.dumps({"gitops_commit": args.commit, "image": expected["image"],
+                          "canary": outcome}, sort_keys=True))
+        if outcome == "aborted":
+            raise SystemExit(EXIT_CANARY_ABORTED)
+        return
     wait_for_release(expected, args.commit)
     if args.wait_only:
         print(json.dumps({"gitops_commit": args.commit, "image": expected["image"],

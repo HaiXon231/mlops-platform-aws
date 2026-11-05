@@ -49,7 +49,9 @@ verify() {
   local grafana_pid=$!
   trap "kill $prom_pid $grafana_pid 2>/dev/null || true" EXIT
   local attempt replicas
-  replicas="$(kubectl -n mlops get deployment inference-api -o jsonpath='{.spec.replicas}')"
+  # Rollout sở hữu replica sau khi canary được áp dụng; trước đó vẫn là Deployment.
+  replicas="$(kubectl -n mlops get rollout.argoproj.io inference-api -o jsonpath='{.spec.replicas}' 2>/dev/null ||
+    kubectl -n mlops get deployment inference-api -o jsonpath='{.spec.replicas}')"
   for attempt in $(seq 1 24); do
     if curl -fsS --get --data-urlencode 'query=up{job="inference-api"}' \
         --max-time 3 \
@@ -77,13 +79,23 @@ load_test() {
   (( vus >= 1 && vus <= 50 && rate >= 1 && rate <= 200 && seconds >= 30 && seconds <= 900 )) || {
     echo 'Limits: VUS 1-50, RATE 1-200 requests/s, DURATION_SECONDS 30-900' >&2; exit 2;
   }
+  local target="${M33_TARGET:-service}" base_url host
+  case "$target" in
+    service) base_url='http://inference-api.mlops.svc.cluster.local:8000' ;;
+    alb)
+      host="$(kubectl -n mlops get ingress inference-api -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+      [[ "$host" =~ ^[a-z0-9.-]+\.elb\.amazonaws\.com$ ]] || {
+        echo 'ALB hostname is not available yet; check kubectl -n mlops get ingress inference-api' >&2; exit 1; }
+      base_url="http://$host" ;;
+    *) echo 'M33_TARGET must be service or alb' >&2; exit 2 ;;
+  esac
   kubectl -n mlops create configmap m33-k6-script --from-file=k6.js="$monitor/k6.js" \
     --dry-run=client -o yaml | kubectl apply -f -
   local job
-  job="$(K6_VUS="$vus" K6_RATE="$rate" K6_DURATION="${seconds}s" python3 - "$monitor/k6-job.yaml.tpl" <<'PY' | kubectl create -f - -o name
+  job="$(K6_VUS="$vus" K6_RATE="$rate" K6_DURATION="${seconds}s" K6_BASE_URL="$base_url" python3 - "$monitor/k6-job.yaml.tpl" <<'PY' | kubectl create -f - -o name
 import os, pathlib, sys
 content = pathlib.Path(sys.argv[1]).read_text()
-for key in ("K6_VUS", "K6_RATE", "K6_DURATION"):
+for key in ("K6_VUS", "K6_RATE", "K6_DURATION", "K6_BASE_URL"):
     content = content.replace("${" + key + "}", os.environ[key])
 print(content)
 PY

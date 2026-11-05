@@ -2,6 +2,7 @@ import http from 'k6/http';
 import { check } from 'k6';
 
 const vus = Number(__ENV.K6_VUS || 10);
+const baseUrl = __ENV.K6_BASE_URL || 'http://inference-api.mlops.svc.cluster.local:8000';
 export const options = {
   scenarios: {
     inference: {
@@ -20,7 +21,7 @@ export const options = {
 
 export default function () {
   const response = http.post(
-    'http://inference-api.mlops.svc.cluster.local:8000/predict',
+    `${baseUrl}/predict`,
     JSON.stringify({
       pickup_location_id: 1,
       dropoff_location_id: 2,

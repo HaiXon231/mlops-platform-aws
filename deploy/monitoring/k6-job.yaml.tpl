@@ -28,6 +28,8 @@ spec:
               value: "${K6_RATE}"
             - name: K6_DURATION
               value: "${K6_DURATION}"
+            - name: K6_BASE_URL
+              value: "${K6_BASE_URL}"
           resources:
             requests:
               cpu: 100m

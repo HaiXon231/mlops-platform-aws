@@ -41,6 +41,10 @@ help:
 	  'Monitoring (deploy/cleanup change Kubernetes resources; load-test costs compute):' \
 	  '  monitoring-test|deploy|verify|load-test|cleanup' \
 	  '' \
+	  'Canary observation (load via monitoring-load-test M33_TARGET=alb; split reads Prometheus):' \
+	  '  canary-status                   Rollout, AnalysisRuns and ALB hostname.' \
+	  '  canary-split M42_WINDOW=2m      Request share per ReplicaSet (stable vs canary).' \
+	  '' \
 	  'Canary add-ons (deploy installs LB Controller + Argo Rollouts; apply platform first):' \
 	  '  canary-addons-test|deploy|verify|cleanup' \
 	  '' \
@@ -91,6 +95,21 @@ m32-promotion-verify:
 m32-release:
 	gh workflow run m32-release.yml --ref main -f model_name="$(M31_MODEL_NAME)" -f model_version="$(M31_MODEL_VERSION)"
 
+.PHONY: m42-test m42-status m42-split canary-status canary-split
+M42_WINDOW ?= 2m
+canary-status: m42-status
+canary-split: m42-split
+
+m42-test:
+	$(UV) run --locked pytest -q tests/unit/test_m42_canary_tools.py
+	bash -n scripts/m42.sh
+
+m42-status:
+	bash scripts/m42.sh status
+
+m42-split:
+	M42_WINDOW="$(M42_WINDOW)" bash scripts/m42.sh split
+
 .PHONY: m41-test m41-deploy m41-verify m41-cleanup canary-addons-test canary-addons-deploy canary-addons-verify canary-addons-cleanup
 canary-addons-test: m41-test
 canary-addons-deploy: m41-deploy
@@ -117,6 +136,7 @@ m41-cleanup:
 M33_VUS ?= 10
 M33_RATE ?= 20
 M33_DURATION_SECONDS ?= 300
+M33_TARGET ?= service
 
 m33-test:
 	$(UV) run --locked pytest -q tests/unit/test_m33_config.py
@@ -134,7 +154,7 @@ m33-verify:
 	bash scripts/m33.sh verify
 
 m33-load-test:
-	M33_VUS="$(M33_VUS)" M33_RATE="$(M33_RATE)" M33_DURATION_SECONDS="$(M33_DURATION_SECONDS)" bash scripts/m33.sh load-test
+	M33_TARGET="$(M33_TARGET)" M33_VUS="$(M33_VUS)" M33_RATE="$(M33_RATE)" M33_DURATION_SECONDS="$(M33_DURATION_SECONDS)" bash scripts/m33.sh load-test
 
 m33-cleanup:
 	bash scripts/m33.sh cleanup
