@@ -2,7 +2,7 @@
 
 Kiểm chứng ngày **2026-11-05 (UTC)** trên cluster `mlops-aws-dev`, vùng `ap-southeast-1`, Kubernetes 1.36. Tài liệu này chỉ ghi những gì đã quan sát trực tiếp trên cluster; logs thô, mật khẩu và IP cá nhân được giữ ngoài tài liệu public. Thiết kế nằm ở [phase-04-design.md](../phases/phase-04-design.md), vận hành ở [phase-04.md](../phases/phase-04.md).
 
-**Kết luận ngắn.** Canary khỏe được phát hành qua 10% → 50% → 100% và tự promote; canary chậm bị gate độ trễ từ chối và Rollout tự abort; canary không sẵn sàng bị chặn trước khi nhận traffic; sau mỗi lần lỗi, một commit `git revert` đưa Git và cluster về đúng stable trong khoảng 10 giây. Release workflow GitHub chạy thật trên `main` với canary và thành công (mục 12). **Chưa chứng minh:** nhánh *abort* của workflow, tức là tự `git revert` (xem mục Giới hạn).
+**Kết luận ngắn.** Canary khỏe được phát hành qua 10% → 50% → 100% và tự promote; canary chậm bị gate độ trễ từ chối và Rollout tự abort; canary không sẵn sàng bị chặn trước khi nhận traffic; sau mỗi lần lỗi, một commit `git revert` đưa Git và cluster về đúng stable trong khoảng 10 giây. Release workflow GitHub đã chạy thật trên `main` ở cả hai nhánh: thành công (mục 12) và canary bị từ chối rồi tự `git revert` (mục 13). **Giới hạn chính:** nhánh từ chối mới được thử bằng request không hợp lệ (4xx), chưa bằng lỗi 5xx hay một model lỗi thật (xem mục Giới hạn).
 
 ## 1. Cấu hình được kiểm chứng
 
@@ -104,10 +104,10 @@ Sau revert, `deployment.yaml` giống hệt bản stable (diff 0 dòng), nên Ro
 
 ## 9. Giới hạn và điều chưa được chứng minh
 
-- **Nhánh abort của release workflow chưa chạy thật.** Lần chạy workflow thật (mục 12) là nhánh thành công. Phần tự `git revert` trong `m32_release.sh` và `m32_verify.py --wait-outcome/--wait-reverted` chỉ được kiểm bằng unit test (phân loại trạng thái, thứ tự revert, không đổi `champion`, RBAC), vì workflow luôn build image tốt và chỉ chạy được từ `main`.
+- **Nhánh từ chối của release workflow mới được thử với lỗi do tải sinh ra** (mục 13): canary bị loại vì nhận request không hợp lệ, không phải vì chính phiên bản model lỗi, và chỉ chạy một lần. Workflow luôn build image tốt nên không thể tạo canary hỏng thật từ `main` mà không sửa mã hoặc gate.
 - **Một số request timeout khi chuyển phiên bản.** Lần tải 15 phút lúc Application chuyển sang `main` (35.931 request, 39,9 req/s, p95 24,9 ms) có **32 request lỗi (0,08%)**, `max` 10 giây tức là timeout, không phải HTTP 5xx do ứng dụng trả (gate `error-rate` vẫn 0 vì ứng dụng chỉ đếm request đã tới nó). Nguyên nhân chưa được kiểm chứng; giả thuyết là Pod cũ bị gỡ khi ALB còn gửi request tới đó. Lỗi này **không lặp lại** trong lần tải suốt release thật (mục 12: 0 lỗi trên 35.921 request), nên chưa thể coi là hệ thống. Hướng xử lý thường dùng nếu lặp lại là `preStop` chờ vài giây và pod readiness gate của LB Controller; chưa áp dụng.
 - **Nhánh smoke fail chưa được thực thi.** Mọi smoke Job đã chạy đều `Successful`; khi Pod chưa Ready, Rollout dừng trước bước smoke.
-- **Gate tỷ lệ lỗi 5xx mới thấy đạt (giá trị 0), chưa thấy fail** với lỗi HTTP thật, vì không chèn lỗi vào ứng dụng (quyết định thiết kế). Truy vấn được kiểm bằng unit test và bằng các phép đo `0` trên cluster.
+- **Gate tỷ lệ lỗi đã thấy fail, nhưng với 4xx.** Mục 13 cho thấy `error-rate` fail khi canary nhận 422 (gate đếm mọi phản hồi từ 400 trở lên). Chưa thử với 5xx thật, vì không chèn lỗi vào ứng dụng (quyết định thiết kế). Hệ quả cần biết: lỗi của client cũng có thể làm một canary bị từ chối.
 - **Cỡ mẫu nhỏ:** mỗi phép đo phân phối có khoảng 1.800 request; chưa có kiểm định thống kê, chỉ so với sai số nhị thức ước tính.
 - **Môi trường:** account dùng chung, một cluster, tải từ trong cluster; Application trỏ nhánh thử chứ không phải `main`; HPA scale đồng thời (3 Pod stable) nên số Pod stable thay đổi giữa các lần chạy.
 - **Thời gian phát hiện lỗi khởi động:** canary không Ready chỉ bị phát hiện sau `progressDeadlineSeconds = 600` (10 phút).
@@ -153,3 +153,36 @@ Sau khi PR #1 được merge (`a069afa`), Application Argo CD được trỏ v�
 | Kết quả cluster | Rollout `Healthy`, stable = current = `7f986c76c8`, 3 Pod Ready; Deployment template mang image digest mới và `release-id: m32-42011637577-1` |
 
 Điều này xác nhận trên hạ tầng thật: RBAC mới của runner đủ để đọc Rollout/AnalysisRun, `rollout_state` nhận đúng trạng thái `promoted`, `main` không bị branch protection chặn bot, và trình tự "một commit GitOps → canary → verify → xác nhận `champion`" hoạt động với canary. Tải k6 được bật ngay khi commit digest xuất hiện (gate cần traffic); không có tải thì `canary-request-rate` là inconclusive. Tải suốt lần release (15 phút, 20 VU, 40 req/s): **35.921 request, 0 lỗi HTTP**, p95 25,47 ms, avg 18,7 ms, max 971 ms, 80 `dropped_iterations`.
+
+## 13. Release workflow thật: canary bị từ chối và tự `git revert`
+
+Mục đích: chứng minh nhánh còn thiếu của `m32_release.sh`. Workflow luôn build image tốt, nên canary được làm hỏng **bằng tải**: ngay khi commit digest của bot xuất hiện, k6 được bật với `LOAD_PAYLOAD=invalid` (`pickup_location_id=999`, API trả 422; 20 VU, 40 req/s, 300 giây). Không sửa gate, không sửa `main` bằng tay. Một lần chạy thử 30 giây trước đó xác nhận k6 hợp lệ (151/151 phản hồi 422 được coi là mong đợi) và `inference_http_errors_total{status="422"}` tăng đúng (khoảng 182 lỗi trên 184 request trong 3 phút).
+
+Run `42016449106`, dispatch 11:08:05 UTC:
+
+| Mốc (UTC) | Quan sát |
+| --- | --- |
+| 11:08:47–11:09:09 | Mở CIDR cho runner, xác nhận danh sách tạm |
+| 11:10:59 | Commit của bot `fc88cfa` `m32: release m32-42016449106-1 by digest`; tải không hợp lệ bật lúc 11:11:00 |
+| 11:15:20 | `{"canary": "aborted"}` (4 phút 21 giây sau commit release), workflow ghi `Canary for m32-42016449106-1 was rejected; reverting GitOps commit fc88cfa...` |
+| trước 11:15:55 | Commit revert `ffff3ad` `Revert "m32: release m32-42016449106-1 by digest"` lên `main` (thấy lúc 11:15:55) |
+| 11:19:07 | `{"rollback": "stable-restored"}`, workflow ghi `Release ... failed its canary gates; stable restored and recorded in Git.` |
+| 11:19:41 | Khôi phục CIDR: `["…/32"]` đúng danh sách ban đầu |
+| 11:19:44 | Run kết thúc `failure` (khoảng 11 phút 39 giây) |
+
+Khoảng ba phút giữa commit revert và `stable-restored` là do Argo CD hỏi Git mỗi 3 phút, workflow không ép làm mới. Trong thời gian đó canary ở weight 0 (đã abort), stable phục vụ 100%.
+
+AnalysisRun `7f96cdb8c8-11`: `Failed` với `Metric "error-rate" assessed Failed due to failed (2) > failureLimit (1)`; smoke `Successful`.
+
+| Gate | Phép đo | Kết quả |
+| --- | --- | --- |
+| Tỷ lệ lỗi | `NaN`, `NaN`, **1**, **1** (100%) | **Fail** (ngưỡng 1%) |
+| p95 canary | 4,8–5,0 ms | Đạt (422 trả rất nhanh, gate này không phát hiện được kiểu lỗi này) |
+| p95 so với stable | −0,052 | Đạt |
+| Tốc độ request canary | 0 (trước khi có traffic), 3,3, 3,9 req/s | Một phép đo fail ban đầu, trong giới hạn; kết quả `Successful` |
+
+Kết quả sau cùng:
+- Bước **"Export, build, deploy, verify and promote one release"** là bước duy nhất `failure` (có chủ đích); bước khôi phục CIDR `success`.
+- `main`: `fc88cfa` rồi `ffff3ad`; `deployment.yaml` trở lại đúng bản stable. Argo CD `Synced/Healthy` ở `ffff3ad`; Rollout `Healthy`, stable = current = `7f986c76c8` (như trước release), cờ `abort` đã xóa.
+- `champion` không đổi: log không có bước promote nào (không có dòng `champion`).
+- Image bị từ chối (`sha256:8d685581…607d0b88`) vẫn còn trong ECR, không bị xóa.
