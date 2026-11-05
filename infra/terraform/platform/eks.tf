@@ -65,8 +65,9 @@ module "eks" {
       create_launch_template     = true
       use_custom_launch_template = true
 
-      min_size     = 1
-      desired_size = 1
+      # Hai node: LB Controller và Argo Rollouts không vừa node đơn (CPU requests ~91%).
+      min_size     = 2
+      desired_size = 2
       max_size     = 2
 
       # Custom launch template is required to set an encrypted gp3 root volume.

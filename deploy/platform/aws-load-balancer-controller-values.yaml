@@ -1,0 +1,23 @@
+# eks/aws-load-balancer-controller 3.6.2. clusterName, region và vpcId được truyền bằng --set-string trong scripts/m41.sh.
+# Quyền AWS cấp qua EKS Pod Identity (infra/terraform/platform/alb_controller.tf), không dùng annotation IRSA.
+replicaCount: 1
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+createIngressClassResource: true
+ingressClass: alb
+enableShield: false
+enableWaf: false
+enableWafv2: false
+defaultTags:
+  Project: mlops-platform-aws
+  Environment: dev
+  ManagedBy: aws-load-balancer-controller
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+nodeSelector:
+  eks.amazonaws.com/nodegroup: system

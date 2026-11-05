@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: inference-api-canary
+  namespace: mlops
+  labels:
+    app: inference-api
+spec:
+  type: ClusterIP
+  # Argo Rollouts thêm rollouts-pod-template-hash vào selector khi có canary.
+  selector:
+    app: inference-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

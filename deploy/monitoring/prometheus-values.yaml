@@ -82,3 +82,5 @@ serverFiles:
             target_label: namespace
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_rollouts_pod_template_hash]
+            target_label: rollouts_pod_template_hash

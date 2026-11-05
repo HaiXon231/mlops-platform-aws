@@ -41,6 +41,9 @@ help:
 	  'Monitoring (deploy/cleanup change Kubernetes resources; load-test costs compute):' \
 	  '  monitoring-test|deploy|verify|load-test|cleanup' \
 	  '' \
+	  'Canary add-ons (deploy installs LB Controller + Argo Rollouts; apply platform first):' \
+	  '  canary-addons-test|deploy|verify|cleanup' \
+	  '' \
 	  'Verification and cleanup:' \
 	  '  check                           All local Python unit/integration tests.' \
 	  '  cloud-teardown                  Back up, then delete mlops namespace incl. serving; stop GitOps first.' \
@@ -87,6 +90,28 @@ m32-promotion-verify:
 
 m32-release:
 	gh workflow run m32-release.yml --ref main -f model_name="$(M31_MODEL_NAME)" -f model_version="$(M31_MODEL_VERSION)"
+
+.PHONY: m41-test m41-deploy m41-verify m41-cleanup canary-addons-test canary-addons-deploy canary-addons-verify canary-addons-cleanup
+canary-addons-test: m41-test
+canary-addons-deploy: m41-deploy
+canary-addons-verify: m41-verify
+canary-addons-cleanup: m41-cleanup
+
+m41-test:
+	$(UV) run --locked pytest -q tests/unit/test_m4_manifests.py tests/unit/test_m41_addons.py
+	bash -n scripts/m41.sh
+	kubectl kustomize deploy/gitops/inference >/dev/null
+	helm template aws-load-balancer-controller aws-load-balancer-controller --repo https://aws.github.io/eks-charts --version 3.6.2 --namespace kube-system -f deploy/platform/aws-load-balancer-controller-values.yaml --set-string clusterName=mlops-aws-dev --set-string region=ap-southeast-1 --set-string vpcId=vpc-00000000 >/dev/null
+	helm template argo-rollouts argo-rollouts --repo https://argoproj.github.io/argo-helm --version 2.43.9 --namespace argo-rollouts -f deploy/platform/argo-rollouts-values.yaml >/dev/null
+
+m41-deploy:
+	bash scripts/m41.sh deploy
+
+m41-verify:
+	bash scripts/m41.sh verify
+
+m41-cleanup:
+	bash scripts/m41.sh cleanup
 
 .PHONY: m33-test m33-deploy m33-verify m33-load-test m33-cleanup
 M33_VUS ?= 10

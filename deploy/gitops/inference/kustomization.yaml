@@ -4,4 +4,8 @@ namespace: mlops
 resources:
 - deployment.yaml
 - service.yaml
+- service-canary.yaml
+- ingress.yaml
+- analysis-template.yaml
+- rollout.yaml
 - hpa.yaml

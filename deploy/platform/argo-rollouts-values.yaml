@@ -1,0 +1,14 @@
+# argo/argo-rollouts 2.43.9. Chỉ controller; không bật dashboard hay ingress.
+installCRDs: true
+controller:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+  nodeSelector:
+    eks.amazonaws.com/nodegroup: system
+dashboard:
+  enabled: false
