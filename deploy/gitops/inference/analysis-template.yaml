@@ -8,8 +8,9 @@ spec:
     - name: canary-hash
     - name: stable-hash
   metrics:
-    # Tỷ lệ lỗi của canary. Không có mẫu thì truy vấn trả NaN (0/0) và kết quả là
-    # inconclusive, không phải "đạt".
+    # Tỷ lệ lỗi của canary. Counter lỗi chỉ xuất hiện sau lỗi đầu tiên, nên tử số phải rơi về 0
+    # khi chưa có lỗi (nếu không phép chia rỗng và gate luôn inconclusive). Không có request nào
+    # thì mẫu số rỗng, kết quả là NaN (inconclusive), không phải "đạt".
     - name: error-rate
       interval: 30s
       failureLimit: 1
@@ -21,7 +22,7 @@ spec:
           address: http://m33-prometheus-server.monitoring.svc.cluster.local:80
           query: |
             (
-              sum(rate(inference_http_errors_total{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m]))
+              (sum(rate(inference_http_errors_total{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m])) or vector(0))
               /
               sum(rate(inference_http_requests_total{path="/predict",rollouts_pod_template_hash="{{args.canary-hash}}"}[1m]))
             ) or (vector(0) / vector(0))

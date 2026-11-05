@@ -92,3 +92,19 @@ def test_kustomization_and_prometheus_wire_everything_together():
     relabels = prom["serverFiles"]["prometheus.yml"]["scrape_configs"][0]["relabel_configs"]
     assert {"source_labels": ["__meta_kubernetes_pod_label_rollouts_pod_template_hash"],
             "target_label": "rollouts_pod_template_hash"} in relabels
+
+
+def test_error_rate_treats_a_missing_error_counter_as_zero_but_no_traffic_as_unknown():
+    """Found on the cluster: errors_total has no series until the first error, so 0 errors gave NaN."""
+    gate = load_all("analysis-template.yaml")[0]
+    metrics = {item["name"]: item for item in gate["spec"]["metrics"]}
+    query = metrics["error-rate"]["provider"]["prometheus"]["query"]
+    # The division is the line holding only "/" (path="/predict" also contains slashes).
+    lines = [line.strip() for line in query.strip().splitlines()]
+    divide = lines.index("/")
+    numerator, denominator = " ".join(lines[:divide]), " ".join(lines[divide + 1:])
+    assert "(sum(rate(inference_http_errors_total" in numerator
+    assert ") or vector(0))" in numerator, "numerator must default to 0 when no error was ever recorded"
+    assert "or vector(0)" not in denominator.split("or (vector(0) / vector(0))")[0], \
+        "denominator must stay empty without traffic so the result is inconclusive"
+    assert query.rstrip().endswith("or (vector(0) / vector(0))")
