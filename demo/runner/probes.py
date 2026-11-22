@@ -188,9 +188,27 @@ def _free_port() -> int:
         return sock.getsockname()[1]
 
 
+# Standard local UI tunnels (e.g. kept alive by `mlops-ui-tunnels`); reused when healthy.
+KNOWN_TUNNELS = {("mlops", "mlflow"): "http://127.0.0.1:5000",
+                 ("monitoring", "m33-prometheus-server"): "http://127.0.0.1:9090"}
+PORT_FORWARD_TIMEOUT = 90  # kubectl on this cluster can need 30-60s (AWS token + websocket upgrade)
+
+
+def _healthy(url: str) -> bool:
+    try:
+        urllib.request.urlopen(url, timeout=3).close()
+        return True
+    except OSError:
+        return False
+
+
 @contextlib.contextmanager
 def port_forward(namespace: str, service: str, remote: int, health: str) -> Iterator[str]:
-    """kubectl port-forward on a free local port; always terminated on exit."""
+    """Reuse a healthy standard tunnel, else kubectl port-forward on a free port (terminated on exit)."""
+    known = KNOWN_TUNNELS.get((namespace, service))
+    if known and _healthy(known + health):
+        yield known
+        return
     import tempfile
     port = _free_port()
     errors = tempfile.TemporaryFile(mode="w+")
@@ -204,7 +222,8 @@ def port_forward(namespace: str, service: str, remote: int, health: str) -> Iter
         text = errors.read().strip()[-300:]
         return f": {text}" if text else " (expired AWS session / EKS CIDR allow-list?)"
     try:
-        for _ in range(60):
+        deadline = time.monotonic() + PORT_FORWARD_TIMEOUT
+        while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError(f"port-forward to {service} exited{reason()}")
             try:
@@ -213,7 +232,7 @@ def port_forward(namespace: str, service: str, remote: int, health: str) -> Iter
             except OSError:
                 time.sleep(0.5)
         else:
-            raise RuntimeError(f"port-forward to {service} not ready after 30s{reason()}")
+            raise RuntimeError(f"port-forward to {service} not ready after {PORT_FORWARD_TIMEOUT}s{reason()}")
         yield url
     finally:
         errors.close()

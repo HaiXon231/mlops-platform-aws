@@ -87,6 +87,14 @@ def test_noop_when_already_champion(mlflow, tmp_path):
     assert mlflow.sets == []
 
 
+def test_port_forward_reuses_a_healthy_standard_tunnel(monkeypatch):
+    from demo.runner import probes
+    monkeypatch.setattr(probes, "_healthy", lambda url: url == "http://127.0.0.1:5000/health")
+    monkeypatch.setattr(probes.subprocess, "Popen", lambda *a, **k: pytest.fail("must not spawn kubectl"))
+    with probes.port_forward("mlops", "mlflow", 5000, "/health") as url:
+        assert url == "http://127.0.0.1:5000"
+
+
 def test_cli_is_dry_run_by_default_and_executes_with_confirmation(mlflow, tmp_path, capsys):
     history = str(tmp_path / "h.json")
     args = cli.build_parser().parse_args(["champion", "--version", "2", "--history", history])

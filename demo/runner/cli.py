@@ -420,7 +420,7 @@ CHAMPION_HISTORY = STATE_DIR / "champion-history.json"
 
 
 def _champion_client(args):
-    """MlflowClient on --tracking-uri, or on a temporary port-forward to the cluster MLflow."""
+    """MlflowClient on --tracking-uri, the local :5000 tunnel if healthy, or a temporary port-forward."""
     import contextlib
     from mlflow import MlflowClient
     from demo.runner import probes
